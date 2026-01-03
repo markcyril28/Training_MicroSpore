@@ -211,6 +211,169 @@ def _extract_accuracy_summary(results_csv: Optional[Path]) -> str:
         return f"*(Error extracting accuracy: {e})*"
 
 
+def generate_general_results(
+    output_dir: Path,
+    results_csv: Optional[Path] = None,
+    config: Optional[Dict[str, Any]] = None,
+    exp_name: str = "",
+) -> Optional[Path]:
+    """
+    Generate GENERAL_RESULTS_{timestamp}.md with concise results only.
+    
+    Args:
+        output_dir: Directory to save the results file
+        results_csv: Path to results.csv for extracting metrics
+        config: Training configuration dictionary
+        exp_name: Experiment folder name
+        
+    Returns:
+        Path to generated file, or None if generation failed
+    """
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = output_dir / f"GENERAL_RESULTS_{timestamp}.md"
+        
+        # Extract metrics
+        metrics = _extract_concise_results(results_csv, config, exp_name)
+        
+        with open(output_path, 'w') as f:
+            f.write(metrics)
+        
+        print(f"[Export] GENERAL_RESULTS saved to: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"[Export] GENERAL_RESULTS generation failed: {e}")
+    return None
+
+
+def _extract_concise_results(
+    results_csv: Optional[Path],
+    config: Optional[Dict[str, Any]],
+    exp_name: str,
+) -> str:
+    """
+    Extract concise training results for GENERAL_RESULTS.md.
+    
+    Returns:
+        Formatted markdown string with concise results
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Default values
+    total_epochs = 0
+    best_epoch = 0
+    best_map50 = 0.0
+    best_map5095 = 0.0
+    final_precision = 0.0
+    final_recall = 0.0
+    final_f1 = 0.0
+    
+    if results_csv and results_csv.exists():
+        try:
+            import csv
+            with open(results_csv, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+            
+            if rows:
+                total_epochs = len(rows)
+                cleaned_rows = [{k.strip(): v for k, v in row.items()} for row in rows]
+                sample_row = cleaned_rows[0]
+                
+                # Find columns
+                map50_col = next((c for c in sample_row.keys() if 'mAP50' in c and '95' not in c), None)
+                map5095_col = next((c for c in sample_row.keys() if 'mAP50-95' in c), None)
+                prec_col = next((c for c in sample_row.keys() if 'precision' in c.lower()), None)
+                rec_col = next((c for c in sample_row.keys() if 'recall' in c.lower()), None)
+                
+                # Find best mAP50-95 and corresponding epoch
+                if map5095_col:
+                    best_val = 0.0
+                    for i, row in enumerate(cleaned_rows):
+                        val = float(row.get(map5095_col, 0) or 0)
+                        if val > best_val:
+                            best_val = val
+                            best_epoch = i + 1
+                    best_map5095 = best_val
+                
+                if map50_col:
+                    best_map50 = max(float(r.get(map50_col, 0) or 0) for r in cleaned_rows)
+                
+                # Final values
+                last_row = cleaned_rows[-1]
+                if prec_col:
+                    final_precision = float(last_row.get(prec_col, 0) or 0)
+                if rec_col:
+                    final_recall = float(last_row.get(rec_col, 0) or 0)
+                
+                # Calculate F1
+                if final_precision + final_recall > 0:
+                    final_f1 = 2 * final_precision * final_recall / (final_precision + final_recall)
+        except Exception:
+            pass
+    
+    # Config info
+    model = config.get('model', 'N/A') if config else 'N/A'
+    epochs_cfg = config.get('epochs', 'N/A') if config else 'N/A'
+    batch = config.get('batch_size', 'N/A') if config else 'N/A'
+    img_size = config.get('img_size', 'N/A') if config else 'N/A'
+    lr = config.get('lr', 'N/A') if config else 'N/A'
+    optimizer = config.get('optimizer', 'N/A') if config else 'N/A'
+    
+    # Build concise results
+    results = f"""# Training Results Summary
+**Experiment:** {exp_name}  
+**Generated:** {timestamp}
+
+---
+
+## Performance Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Best mAP@50** | {best_map50:.4f} ({best_map50*100:.1f}%) |
+| **Best mAP@50-95** | {best_map5095:.4f} ({best_map5095*100:.1f}%) |
+| **Best Epoch** | {best_epoch} / {total_epochs} |
+| **Final Precision** | {final_precision:.4f} ({final_precision*100:.1f}%) |
+| **Final Recall** | {final_recall:.4f} ({final_recall*100:.1f}%) |
+| **Final F1 Score** | {final_f1:.4f} ({final_f1*100:.1f}%) |
+
+---
+
+## Training Configuration
+
+| Parameter | Value |
+|-----------|-------|
+| Model | {model} |
+| Epochs | {epochs_cfg} |
+| Batch Size | {batch} |
+| Image Size | {img_size} |
+| Learning Rate | {lr} |
+| Optimizer | {optimizer} |
+
+---
+
+## Quick Assessment
+
+"""
+    # Add quick assessment based on metrics
+    if best_map5095 >= 0.5:
+        results += "✅ **GOOD** - mAP@50-95 ≥ 50% indicates strong localization\n"
+    elif best_map5095 >= 0.3:
+        results += "⚠️ **MODERATE** - mAP@50-95 between 30-50%\n"
+    else:
+        results += "❌ **NEEDS IMPROVEMENT** - mAP@50-95 < 30%\n"
+    
+    if best_map50 >= 0.7:
+        results += "✅ **GOOD** - mAP@50 ≥ 70% indicates reliable detection\n"
+    elif best_map50 >= 0.5:
+        results += "⚠️ **MODERATE** - mAP@50 between 50-70%\n"
+    else:
+        results += "❌ **NEEDS IMPROVEMENT** - mAP@50 < 50%\n"
+    
+    return results
+
+
 def create_training_config(
     output_dir: Path,
     model_name: str,
@@ -449,6 +612,9 @@ def export_training_outputs(
     # Copy general interpretation guide to root folder (with accuracy summary)
     results_csv = experiment_path / "results.csv"
     exports['general_guide'] = copy_general_guide(experiment_path, results_csv=results_csv)
+    
+    # Generate concise results file
+    exports['general_results'] = generate_general_results(experiment_path, results_csv=results_csv, config=config, exp_name=exp_name)
     
     # Generate stats files
     exports.update(generate_stats_files(experiment_path, folders['stats'], config, exp_name))
