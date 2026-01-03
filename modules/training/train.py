@@ -94,7 +94,9 @@ def copy_general_guide(
         Path to copied guide, or None if copy failed
     """
     try:
-        output_path = output_dir / "GENERAL_INTERPRETATION_GUIDE_and_ANALYSIS.md"
+        # Add timestamp to filename as per spec
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = output_dir / f"GENERAL_GUIDE_and_ANALYSIS_{timestamp}.md"
         
         # Try to find the source guide
         if source_guide is None:
@@ -451,6 +453,9 @@ def export_training_outputs(
     # Generate stats files
     exports.update(generate_stats_files(experiment_path, folders['stats'], config, exp_name))
     
+    # Generate custom visualizations (loss_curves.png, precision_recall.png)
+    generate_custom_visualizations(results_csv, folders['viz_curves'])
+    
     # Generate visualization interpretation guides
     generate_visualization_guides(folders)
     
@@ -717,6 +722,150 @@ def generate_hardware_stats_csv(experiment_path: Path, output_path: Path) -> Non
         writer.writerow(headers)
         # Placeholder row - actual data would come from monitoring
         writer.writerow(["1", "N/A", "N/A", "N/A", "N/A", "N/A"])
+
+
+def generate_custom_visualizations(results_csv: Path, curves_folder: Path) -> None:
+    """
+    Generate custom visualization plots from results.csv data.
+    Creates loss_curves.png and precision_recall.png as per specification.
+    
+    Args:
+        results_csv: Path to results.csv file
+        curves_folder: Path to visualizations/curves folder
+    """
+    if not results_csv.exists():
+        print("[Viz] Warning: results.csv not found, skipping custom visualizations")
+        return
+    
+    try:
+        import matplotlib.pyplot as plt
+        import csv
+        
+        # Read CSV data
+        with open(results_csv, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        
+        if not rows:
+            return
+        
+        # Clean column names
+        cleaned_rows = [{k.strip(): v for k, v in row.items()} for row in rows]
+        epochs = list(range(1, len(cleaned_rows) + 1))
+        
+        # Find columns dynamically
+        sample_row = cleaned_rows[0]
+        
+        # 1. Generate loss_curves.png
+        try:
+            loss_cols = {
+                'train_box': next((c for c in sample_row.keys() if 'train/box_loss' in c.lower()), None),
+                'train_cls': next((c for c in sample_row.keys() if 'train/cls_loss' in c.lower()), None),
+                'train_dfl': next((c for c in sample_row.keys() if 'train/dfl_loss' in c.lower()), None),
+                'val_box': next((c for c in sample_row.keys() if 'val/box_loss' in c.lower()), None),
+                'val_cls': next((c for c in sample_row.keys() if 'val/cls_loss' in c.lower()), None),
+                'val_dfl': next((c for c in sample_row.keys() if 'val/dfl_loss' in c.lower()), None),
+            }
+            
+            if any(loss_cols.values()):
+                fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+                fig.suptitle('Training and Validation Loss Curves', fontsize=14, fontweight='bold')
+                
+                # Box Loss
+                if loss_cols['train_box'] and loss_cols['val_box']:
+                    train_box = [float(r.get(loss_cols['train_box'], 0) or 0) for r in cleaned_rows]
+                    val_box = [float(r.get(loss_cols['val_box'], 0) or 0) for r in cleaned_rows]
+                    axes[0].plot(epochs, train_box, label='Train', color='blue', linewidth=2)
+                    axes[0].plot(epochs, val_box, label='Validation', color='orange', linewidth=2)
+                    axes[0].set_title('Box Loss')
+                    axes[0].set_xlabel('Epoch')
+                    axes[0].set_ylabel('Loss')
+                    axes[0].legend()
+                    axes[0].grid(True, alpha=0.3)
+                
+                # Classification Loss
+                if loss_cols['train_cls'] and loss_cols['val_cls']:
+                    train_cls = [float(r.get(loss_cols['train_cls'], 0) or 0) for r in cleaned_rows]
+                    val_cls = [float(r.get(loss_cols['val_cls'], 0) or 0) for r in cleaned_rows]
+                    axes[1].plot(epochs, train_cls, label='Train', color='blue', linewidth=2)
+                    axes[1].plot(epochs, val_cls, label='Validation', color='orange', linewidth=2)
+                    axes[1].set_title('Classification Loss')
+                    axes[1].set_xlabel('Epoch')
+                    axes[1].set_ylabel('Loss')
+                    axes[1].legend()
+                    axes[1].grid(True, alpha=0.3)
+                
+                # DFL Loss
+                if loss_cols['train_dfl'] and loss_cols['val_dfl']:
+                    train_dfl = [float(r.get(loss_cols['train_dfl'], 0) or 0) for r in cleaned_rows]
+                    val_dfl = [float(r.get(loss_cols['val_dfl'], 0) or 0) for r in cleaned_rows]
+                    axes[2].plot(epochs, train_dfl, label='Train', color='blue', linewidth=2)
+                    axes[2].plot(epochs, val_dfl, label='Validation', color='orange', linewidth=2)
+                    axes[2].set_title('DFL Loss')
+                    axes[2].set_xlabel('Epoch')
+                    axes[2].set_ylabel('Loss')
+                    axes[2].legend()
+                    axes[2].grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                loss_curves_path = curves_folder / 'loss_curves.png'
+                plt.savefig(loss_curves_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                print(f"[Viz] loss_curves.png generated")
+        except Exception as e:
+            print(f"[Viz] Error generating loss_curves.png: {e}")
+        
+        # 2. Generate precision_recall.png
+        try:
+            metric_cols = {
+                'precision': next((c for c in sample_row.keys() if 'precision' in c.lower() and 'all' in c.lower()), None),
+                'recall': next((c for c in sample_row.keys() if 'recall' in c.lower() and 'all' in c.lower()), None),
+                'map50': next((c for c in sample_row.keys() if 'map50' in c.lower() and '95' not in c.lower()), None),
+                'map5095': next((c for c in sample_row.keys() if 'map50-95' in c.lower()), None),
+            }
+            
+            if any(metric_cols.values()):
+                fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+                fig.suptitle('Precision, Recall, and mAP over Epochs', fontsize=14, fontweight='bold')
+                
+                # Precision and Recall
+                if metric_cols['precision'] and metric_cols['recall']:
+                    precision = [float(r.get(metric_cols['precision'], 0) or 0) for r in cleaned_rows]
+                    recall = [float(r.get(metric_cols['recall'], 0) or 0) for r in cleaned_rows]
+                    axes[0].plot(epochs, precision, label='Precision', color='green', linewidth=2, marker='o', markersize=4)
+                    axes[0].plot(epochs, recall, label='Recall', color='red', linewidth=2, marker='s', markersize=4)
+                    axes[0].set_title('Precision & Recall')
+                    axes[0].set_xlabel('Epoch')
+                    axes[0].set_ylabel('Score')
+                    axes[0].set_ylim([0, 1.05])
+                    axes[0].legend()
+                    axes[0].grid(True, alpha=0.3)
+                
+                # mAP
+                if metric_cols['map50'] and metric_cols['map5095']:
+                    map50 = [float(r.get(metric_cols['map50'], 0) or 0) for r in cleaned_rows]
+                    map5095 = [float(r.get(metric_cols['map5095'], 0) or 0) for r in cleaned_rows]
+                    axes[1].plot(epochs, map50, label='mAP@50', color='blue', linewidth=2, marker='o', markersize=4)
+                    axes[1].plot(epochs, map5095, label='mAP@50-95', color='purple', linewidth=2, marker='s', markersize=4)
+                    axes[1].set_title('Mean Average Precision')
+                    axes[1].set_xlabel('Epoch')
+                    axes[1].set_ylabel('mAP')
+                    axes[1].set_ylim([0, 1.05])
+                    axes[1].legend()
+                    axes[1].grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+                precision_recall_path = curves_folder / 'precision_recall.png'
+                plt.savefig(precision_recall_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                print(f"[Viz] precision_recall.png generated")
+        except Exception as e:
+            print(f"[Viz] Error generating precision_recall.png: {e}")
+            
+    except ImportError:
+        print("[Viz] matplotlib not available, skipping custom visualizations")
+    except Exception as e:
+        print(f"[Viz] Error generating custom visualizations: {e}")
 
 
 def generate_visualization_guides(folders: Dict[str, Path]) -> None:
