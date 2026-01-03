@@ -435,6 +435,78 @@ def generate_experiment_name(
     return f"{model_stem}_e{epochs}_b{batch_size}_img{img_size}_{timestamp}"
 
 
+# =============================================================================
+# DATA.YAML PATH UTILITIES (Portability Support)
+# =============================================================================
+
+def update_data_yaml_path(data_yaml_path: Union[str, Path], dataset_dir: Optional[Union[str, Path]] = None) -> Path:
+    """
+    Update the 'path' field in data.yaml to use the absolute path of the dataset directory.
+    This ensures the project is portable across different machines and directories.
+    
+    Args:
+        data_yaml_path: Path to the data.yaml file
+        dataset_dir: Optional explicit dataset directory path. If not provided,
+                     uses the parent directory of data.yaml
+        
+    Returns:
+        Path to the updated data.yaml file
+        
+    Example:
+        >>> update_data_yaml_path('/new/location/Dataset_1/data.yaml')
+        # Updates data.yaml 'path' field to '/new/location/Dataset_1'
+    """
+    import yaml
+    
+    data_yaml_path = Path(data_yaml_path).resolve()
+    
+    if not data_yaml_path.exists():
+        raise FileNotFoundError(f"data.yaml not found: {data_yaml_path}")
+    
+    # Determine the dataset directory
+    if dataset_dir:
+        dataset_dir = Path(dataset_dir).resolve()
+    else:
+        # Use parent directory of data.yaml as dataset root
+        dataset_dir = data_yaml_path.parent.resolve()
+    
+    # Read current data.yaml
+    with open(data_yaml_path, 'r') as f:
+        data_config = yaml.safe_load(f)
+    
+    # Get the old path for comparison
+    old_path = data_config.get('path', '')
+    new_path = str(dataset_dir)
+    
+    # Only update if the path has changed
+    if old_path != new_path:
+        data_config['path'] = new_path
+        
+        # Write back to data.yaml
+        with open(data_yaml_path, 'w') as f:
+            yaml.dump(data_config, f, default_flow_style=False, sort_keys=False)
+        
+        print(f"[Portability] Updated data.yaml path:")
+        print(f"  Old: {old_path}")
+        print(f"  New: {new_path}")
+    
+    return data_yaml_path
+
+
+def ensure_portable_data_yaml(data_yaml_path: Union[str, Path]) -> Path:
+    """
+    Ensure data.yaml uses a relative or current absolute path for portability.
+    This is a convenience wrapper that auto-detects the dataset directory.
+    
+    Args:
+        data_yaml_path: Path to the data.yaml file
+        
+    Returns:
+        Path to the (potentially updated) data.yaml file
+    """
+    return update_data_yaml_path(data_yaml_path)
+
+
 # Export public API
 __all__ = [
     # Logging
@@ -460,4 +532,7 @@ __all__ = [
     # Training utilities
     'estimate_training_time',
     'generate_experiment_name',
+    # Portability utilities
+    'update_data_yaml_path',
+    'ensure_portable_data_yaml',
 ]

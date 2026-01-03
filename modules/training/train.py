@@ -4,6 +4,8 @@ Implements DRY principle - uses centralized config and utilities.
 """
 
 import argparse
+import csv
+import json
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -21,7 +23,7 @@ from ..config import (
     get_trained_models_path,
     get_data_yaml_path,
 )
-from ..utils import check_gpu, get_system_info, ensure_dir
+from ..utils import check_gpu, get_system_info, ensure_dir, update_data_yaml_path
 from .stats import TrainingStats, generate_training_report
 
 # Import logging module (optional - gracefully handle if not available)
@@ -46,8 +48,8 @@ def export_to_onnx(
     Export trained model to ONNX format.
     
     Args:
-        model_path: Path to the best.pt weights
-        output_dir: Directory to save ONNX file
+        model_path: Path to the best.pt weights (already renamed to {exp_name}_best.pt)
+        output_dir: Directory to save ONNX file (weights folder)
         exp_name: Experiment folder name (used for ONNX filename)
         img_size: Image size used during training
         
@@ -61,11 +63,12 @@ def export_to_onnx(
         # Export to ONNX
         onnx_path = model.export(format='onnx', imgsz=img_size, simplify=True)
         
-        # Move to output directory with naming based on experiment folder name
+        # Move to output directory with naming: {exp_name}_best.onnx
         if onnx_path and Path(onnx_path).exists():
-            # Use experiment folder name for ONNX file: e.g., Dataset_1_yolov5xu_e10_b8_img320.onnx
-            output_onnx = output_dir / f"{exp_name}.onnx"
+            output_onnx = output_dir / f"{exp_name}_best.onnx"
             shutil.copy(onnx_path, output_onnx)
+            # Clean up temp ONNX file
+            Path(onnx_path).unlink()
             print(f"[Export] ONNX saved to: {output_onnx}")
             return output_onnx
     except Exception as e:
@@ -206,279 +209,12 @@ def _extract_accuracy_summary(results_csv: Optional[Path]) -> str:
         return f"*(Error extracting accuracy: {e})*"
 
 
-def export_raw_data_csvs(
-    experiment_path: Path,
-    stats_dir: Path,
-) -> Dict[str, Optional[Path]]:
-    """
-    Export raw training data and statistics to CSV files for later analysis.
-    
-    Args:
-        experiment_path: Path to training experiment folder
-        stats_dir: Directory to save CSV files
-        
-    Returns:
-        Dictionary of exported CSV file paths
-    """
-    csv_files = {}
-    
-    try:
-        # 1. Copy results.csv to stats folder (already done, but ensure it's there)
-        results_src = experiment_path / "results.csv"
-        if results_src.exists():
-            results_dst = stats_dir / "training_metrics.csv"
-            shutil.copy(str(results_src), str(results_dst))
-            csv_files['training_metrics'] = results_dst
-        
-        # 2. Generate epoch summary CSV
-        if results_src.exists():
-            epoch_summary_path = stats_dir / "epoch_summary.csv"
-            _generate_epoch_summary_csv(results_src, epoch_summary_path)
-            csv_files['epoch_summary'] = epoch_summary_path
-        
-        # 3. Generate class performance CSV if confusion matrix data available
-        # (This would need actual training callback data in a real implementation)
-        
-        print(f"[Export] Generated {len(csv_files)} raw data CSVs")
-        
-    except Exception as e:
-        print(f"[Export] Raw data CSV export failed: {e}")
-    
-    return csv_files
-
-
-def _generate_epoch_summary_csv(results_csv: Path, output_path: Path) -> None:
-    """
-    Generate a simplified epoch summary CSV with key metrics.
-    """
-    try:
-        import csv
-        
-        with open(results_csv, 'r') as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
-        
-        if not rows:
-            return
-        
-        # Define key columns to extract
-        key_metrics = ['epoch', 'train/box_loss', 'train/cls_loss', 'train/dfl_loss',
-                       'metrics/precision(B)', 'metrics/recall(B)', 
-                       'metrics/mAP50(B)', 'metrics/mAP50-95(B)',
-                       'val/box_loss', 'val/cls_loss', 'val/dfl_loss', 'lr/pg0']
-        
-        with open(output_path, 'w', newline='') as f:
-            # Clean headers
-            available_cols = [k.strip() for k in rows[0].keys()]
-            output_cols = [col for col in key_metrics if col in available_cols]
-            
-            writer = csv.writer(f)
-            writer.writerow(output_cols)
-            
-            for row in rows:
-                clean_row = {k.strip(): v for k, v in row.items()}
-                writer.writerow([clean_row.get(col, '') for col in output_cols])
-                
-    except Exception as e:
-        print(f"[Export] Epoch summary generation failed: {e}")
-
-
-def generate_output_analysis_files(
-    experiment_path: Path,
-    config: Dict[str, Any],
-    classes: List[str],
-) -> Dict[str, Optional[Path]]:
-    """
-    Generate accompanying analysis text files for important output files.
-    
-    Args:
-        experiment_path: Path to training experiment folder
-        config: Training configuration dictionary
-        classes: List of class names
-        
-    Returns:
-        Dictionary of generated analysis file paths
-    """
-    analysis_files = {}
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    try:
-        # 1. Generate weights analysis
-        weights_analysis_path = experiment_path / "weights_ANALYSIS.txt"
-        weights_content = f"""# Weights Directory Analysis
-# Generated: {timestamp}
-
-## Overview
-This directory contains the trained model weights.
-
-## Files
-- best.pt: Best performing model checkpoint (highest mAP50-95)
-- last.pt: Final epoch model checkpoint
-
-## Usage
-Load best.pt for inference:
-    from ultralytics import YOLO
-    model = YOLO('weights/best.pt')
-    results = model('image.jpg')
-
-## Deployment
-For production deployment, use the ONNX export in the parent directory.
-"""
-        with open(weights_analysis_path, 'w') as f:
-            f.write(weights_content)
-        analysis_files['weights_analysis'] = weights_analysis_path
-        
-        # 2. Generate results.csv analysis
-        results_analysis_path = experiment_path / "results_csv_ANALYSIS.txt"
-        results_content = f"""# results.csv Analysis Guide
-# Generated: {timestamp}
-
-## Overview
-This file contains epoch-by-epoch training metrics.
-
-## Key Columns
-- epoch: Training epoch number
-- train/box_loss: Bounding box regression loss (should decrease)
-- train/cls_loss: Classification loss (should decrease)
-- train/dfl_loss: Distribution focal loss (should decrease)
-- metrics/precision(B): Detection precision
-- metrics/recall(B): Detection recall
-- metrics/mAP50(B): Mean Average Precision at IoU=0.50
-- metrics/mAP50-95(B): Mean AP at IoU=0.50-0.95 (primary metric)
-
-## Interpretation
-- All losses should decrease over epochs
-- mAP values should increase over epochs
-- Large gap between train/val metrics indicates overfitting
-- Smooth curves indicate stable training
-
-## Quick Analysis (Python)
-```python
-import pandas as pd
-df = pd.read_csv('results.csv')
-print(f"Best mAP50-95: {{df['metrics/mAP50-95(B)'].max():.4f}}")
-```
-"""
-        with open(results_analysis_path, 'w') as f:
-            f.write(results_content)
-        analysis_files['results_analysis'] = results_analysis_path
-        
-        # 3. Generate args.yaml analysis
-        args_analysis_path = experiment_path / "args_yaml_ANALYSIS.txt"
-        args_content = f"""# args.yaml Analysis Guide
-# Generated: {timestamp}
-
-## Overview
-This file contains all YOLO training arguments used for this experiment.
-
-## Key Parameters
-- model: {config.get('model', 'Unknown')}
-- epochs: {config.get('epochs', 'Unknown')}
-- batch: {config.get('batch_size', 'Unknown')}
-- imgsz: {config.get('img_size', 'Unknown')}
-- lr0: {config.get('lr0', 'Unknown')}
-- optimizer: {config.get('optimizer', 'Unknown')}
-
-## Augmentation Settings
-- hsv_h: {config.get('hsv_h', 0.015)} (hue augmentation)
-- hsv_s: {config.get('hsv_s', 0.7)} (saturation augmentation)
-- hsv_v: {config.get('hsv_v', 0.4)} (value augmentation)
-- mosaic: {config.get('mosaic', 1.0)}
-- flipud: {config.get('flipud', 0.5)} (vertical flip probability)
-- fliplr: {config.get('fliplr', 0.5)} (horizontal flip probability)
-
-## Classes Trained
-{chr(10).join(f'  {i}: {name}' for i, name in enumerate(classes)) if classes else '  (classes not available)'}
-
-## Reproducibility
-Use these settings to reproduce the training run.
-"""
-        with open(args_analysis_path, 'w') as f:
-            f.write(args_content)
-        analysis_files['args_analysis'] = args_analysis_path
-        
-        # 4. Generate ONNX usage guide
-        onnx_analysis_path = experiment_path / "onnx_ANALYSIS.txt"
-        model_name = config.get('model', 'model').replace('.pt', '').replace('.', '')
-        onnx_content = f"""# ONNX Export Analysis Guide
-# Generated: {timestamp}
-
-## Overview
-The ONNX file ({model_name}_microspore.onnx) is for cross-platform deployment.
-
-## Supported Runtimes
-- ONNX Runtime (CPU/GPU)
-- TensorRT (NVIDIA GPU optimization)
-- OpenVINO (Intel optimization)
-- CoreML (Apple devices)
-
-## Usage with ONNX Runtime
-```python
-import onnxruntime as ort
-import numpy as np
-
-session = ort.InferenceSession('{model_name}_microspore.onnx')
-input_name = session.get_inputs()[0].name
-output = session.run(None, {{input_name: image_array}})
-```
-
-## Input Format
-- Shape: (1, 3, {config.get('img_size', 640)}, {config.get('img_size', 640)})
-- Type: float32
-- Normalization: 0-1 range
-
-## Output Format
-- Detection boxes with class probabilities
-- Format: (batch, num_detections, 5 + num_classes)
-"""
-        with open(onnx_analysis_path, 'w') as f:
-            f.write(onnx_content)
-        analysis_files['onnx_analysis'] = onnx_analysis_path
-        
-        print(f"[Export] Generated {len(analysis_files)} analysis files")
-        
-    except Exception as e:
-        print(f"[Export] Analysis file generation failed: {e}")
-    
-    return analysis_files
-
-
-def create_obj_names(
-    classes_file: Path,
-    output_dir: Path,
-) -> Optional[Path]:
-    """
-    Create obj.names file (class names for inference).
-    
-    Args:
-        classes_file: Path to classes.txt from dataset
-        output_dir: Directory to save obj.names
-        
-    Returns:
-        Path to obj.names file, or None if creation failed
-    """
-    try:
-        output_path = output_dir / "obj.names"
-        
-        if classes_file.exists():
-            shutil.copy(classes_file, output_path)
-        else:
-            # Try to find classes.txt in dataset directory
-            print(f"[Export] Warning: classes.txt not found at {classes_file}")
-            return None
-            
-        print(f"[Export] obj.names saved to: {output_path}")
-        return output_path
-    except Exception as e:
-        print(f"[Export] obj.names creation failed: {e}")
-    return None
-
-
 def create_training_config(
     output_dir: Path,
     model_name: str,
     config: Dict[str, Any],
     num_classes: int,
+    exp_name: str = "",
 ) -> Optional[Path]:
     """
     Create a training configuration summary file (.cfg).
@@ -488,18 +224,21 @@ def create_training_config(
         model_name: YOLO model name
         config: Training configuration dictionary
         num_classes: Number of classes in the dataset
+        exp_name: Experiment folder name for file naming
         
     Returns:
         Path to config file, or None if creation failed
     """
     try:
-        clean_name = model_name.replace('.pt', '').replace('.', '')
-        output_path = output_dir / f"{clean_name}_microspore.cfg"
+        # Use exp_name if provided, otherwise fall back to model name
+        file_prefix = exp_name if exp_name else model_name.replace('.pt', '').replace('.', '')
+        output_path = output_dir / f"{file_prefix}_args.cfg"
         
         # Build config content
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cfg_content = f"""# Microspore Phenotyping Training Configuration
 # Generated: {timestamp}
+# Experiment: {exp_name}
 # Model: {model_name}
 
 [training]
@@ -530,9 +269,8 @@ mosaic={config.get('mosaic', 1.0)}
 mixup={config.get('mixup', 0.0)}
 
 [output]
-weights_file=best.pt
-onnx_file={clean_name}_microspore.onnx
-names_file=obj.names
+weights_file={exp_name}_best.pt
+onnx_file={exp_name}_best.onnx
 """
         
         with open(output_path, 'w') as f:
@@ -548,6 +286,15 @@ names_file=obj.names
 def organize_output_folders(experiment_path: Path) -> Dict[str, Path]:
     """
     Create organized folder structure for training outputs.
+    Follows specification:
+        weights/
+            configs/
+        stats/
+        visualizations/
+            curves/
+            matrices/
+            samples/
+            overviews/
     
     Args:
         experiment_path: Path to training experiment folder
@@ -556,12 +303,16 @@ def organize_output_folders(experiment_path: Path) -> Dict[str, Path]:
         Dictionary of folder paths
     """
     folders = {
-        'weights': experiment_path / "weights",           # Model weights (already exists from YOLO)
-        'configs': experiment_path / "configs",           # .cfg and .yaml config files
-        'guides': experiment_path / "guides",             # Interpretation guides and analysis files
-        'exports': experiment_path / "exports",           # ONNX, obj.names for deployment
-        'stats': experiment_path / "stats",               # JSON statistics and reports
-        'visualizations': experiment_path / "visualizations",  # Plots and images
+        # Main folders
+        'weights': experiment_path / "weights",
+        'weights_configs': experiment_path / "weights" / "configs",
+        'stats': experiment_path / "stats",
+        'visualizations': experiment_path / "visualizations",
+        # Visualization subfolders
+        'viz_curves': experiment_path / "visualizations" / "curves",
+        'viz_matrices': experiment_path / "visualizations" / "matrices",
+        'viz_samples': experiment_path / "visualizations" / "samples",
+        'viz_overviews': experiment_path / "visualizations" / "overviews",
     }
     
     for folder in folders.values():
@@ -570,33 +321,70 @@ def organize_output_folders(experiment_path: Path) -> Dict[str, Path]:
     return folders
 
 
-def move_yolo_outputs_to_folders(experiment_path: Path, folders: Dict[str, Path]) -> None:
+def move_yolo_outputs_to_folders(experiment_path: Path, folders: Dict[str, Path], exp_name: str) -> None:
     """
-    Move YOLO-generated outputs to organized folders.
+    Move YOLO-generated outputs to organized folders with proper naming.
+    
+    Visualization organization:
+        curves/ - loss_curves, precision_recall, PR_curve, P_curve, R_curve, F1_curve
+        matrices/ - confusion_matrix, labels_correlogram
+        samples/ - val_batch_predictions, train_batch_samples
+        overviews/ - results, Box_curve, labels
     
     Args:
         experiment_path: Path to training experiment folder
         folders: Dictionary of organized folder paths
+        exp_name: Experiment folder name for file naming
     """
     import shutil as sh
     
-    # Move visualization files (plots, images)
+    # Visualization file mappings: original YOLO name -> (new name, destination folder)
+    viz_mappings = {
+        # Curves
+        'results.png': ('results.png', folders['viz_overviews']),
+        'F1_curve.png': ('F1_curve.png', folders['viz_curves']),
+        'P_curve.png': ('P_curve.png', folders['viz_curves']),
+        'R_curve.png': ('R_curve.png', folders['viz_curves']),
+        'PR_curve.png': ('PR_curve.png', folders['viz_curves']),
+        'Box_curve.png': ('Box_curve.png', folders['viz_overviews']),
+        # Matrices
+        'confusion_matrix.png': ('confusion_matrix.png', folders['viz_matrices']),
+        'confusion_matrix_normalized.png': ('confusion_matrix_normalized.png', folders['viz_matrices']),
+        'labels_correlogram.jpg': ('labels_correlogram.png', folders['viz_matrices']),
+        'labels.jpg': ('labels.png', folders['viz_overviews']),
+        # Samples
+        'train_batch0.jpg': ('train_batch_samples.png', folders['viz_samples']),
+        'train_batch1.jpg': ('train_batch_samples_1.png', folders['viz_samples']),
+        'train_batch2.jpg': ('train_batch_samples_2.png', folders['viz_samples']),
+        'val_batch0_labels.jpg': ('val_batch_labels.png', folders['viz_samples']),
+        'val_batch0_pred.jpg': ('val_batch_predictions.png', folders['viz_samples']),
+        'val_batch1_pred.jpg': ('val_batch_predictions_1.png', folders['viz_samples']),
+        'val_batch2_pred.jpg': ('val_batch_predictions_2.png', folders['viz_samples']),
+    }
+    
+    # Move visualization files with proper naming
+    for original_name, (new_name, dest_folder) in viz_mappings.items():
+        src_file = experiment_path / original_name
+        if src_file.exists():
+            dest = dest_folder / new_name
+            sh.copy(str(src_file), str(dest))
+            src_file.unlink()  # Remove original
+    
+    # Move remaining images to overviews
     viz_patterns = ['*.png', '*.jpg', '*.jpeg']
     for pattern in viz_patterns:
         for f in experiment_path.glob(pattern):
             if f.is_file():
-                dest = folders['visualizations'] / f.name
+                dest = folders['viz_overviews'] / f.name
                 sh.move(str(f), str(dest))
     
-    # Move args.yaml to configs folder
+    # Keep args.yaml at root level (per spec)
+    # No movement needed as YOLO creates it there
+    
+    # Copy args.yaml to weights/configs folder as well with proper naming
     args_file = experiment_path / "args.yaml"
     if args_file.exists():
-        sh.copy(str(args_file), str(folders['configs'] / "args.yaml"))
-    
-    # Move results.csv to stats folder (keep copy in root for compatibility)
-    results_file = experiment_path / "results.csv"
-    if results_file.exists():
-        sh.copy(str(results_file), str(folders['stats'] / "results.csv"))
+        sh.copy(str(args_file), str(folders['weights_configs'] / f"{exp_name}_args.yaml"))
 
 
 def export_training_outputs(
@@ -628,9 +416,9 @@ def export_training_outputs(
     folders = organize_output_folders(experiment_path)
     
     exports = {}
-    weights_dir = experiment_path / "weights"
+    weights_dir = folders['weights']
     best_weights = weights_dir / "best.pt"
-    exp_name = experiment_path.name  # Use folder name for ONNX naming
+    exp_name = experiment_path.name  # Use folder name for file naming
     
     # Read class names for config
     classes = []
@@ -641,39 +429,44 @@ def export_training_outputs(
             num_classes = len(classes)
     config['classes'] = classes
     
-    # Export ONNX to exports folder (named based on output folder name)
+    # Rename weight files with dynamic naming: {exp_name}_best.pt, {exp_name}_last.pt
+    rename_weight_files(weights_dir, exp_name)
+    best_weights = weights_dir / f"{exp_name}_best.pt"
+    
+    # Export ONNX to weights folder (named based on experiment folder name)
     if best_weights.exists():
-        exports['onnx'] = export_to_onnx(best_weights, folders['exports'], exp_name, img_size)
+        exports['onnx'] = export_to_onnx(best_weights, weights_dir, exp_name, img_size)
     else:
-        print(f"[Export] Warning: best.pt not found at {best_weights}")
+        print(f"[Export] Warning: {exp_name}_best.pt not found at {weights_dir}")
         exports['onnx'] = None
     
-    # Create obj.names in exports folder
-    exports['obj_names'] = create_obj_names(classes_file, folders['exports'])
+    # Create config files in weights/configs folder
+    exports['config_cfg'] = create_training_config(folders['weights_configs'], model_name, config, num_classes, exp_name)
+    exports['config_yaml'] = copy_args_yaml_with_naming(experiment_path, folders['weights_configs'], exp_name)
     
-    # Create config file in configs folder
-    exports['config'] = create_training_config(folders['configs'], model_name, config, num_classes)
-    
-    # Copy general interpretation guide to guides folder (with accuracy summary)
+    # Copy general interpretation guide to root folder (with accuracy summary)
     results_csv = experiment_path / "results.csv"
-    exports['general_guide'] = copy_general_guide(folders['guides'], results_csv=results_csv)
+    exports['general_guide'] = copy_general_guide(experiment_path, results_csv=results_csv)
     
-    # Generate accompanying analysis text files in guides folder
-    analysis_files = generate_output_analysis_files(folders['guides'], config, classes)
-    exports.update(analysis_files)
+    # Generate stats files
+    exports.update(generate_stats_files(experiment_path, folders['stats'], config, exp_name))
     
-    # Export raw data CSVs to stats folder
-    csv_files = export_raw_data_csvs(experiment_path, folders['stats'])
-    exports.update(csv_files)
+    # Generate visualization interpretation guides
+    generate_visualization_guides(folders)
     
     # Move YOLO-generated outputs to organized folders
-    move_yolo_outputs_to_folders(experiment_path, folders)
+    move_yolo_outputs_to_folders(experiment_path, folders, exp_name)
+    
+    # Clean up results.csv from root (moved to stats)
+    if results_csv.exists():
+        results_csv.unlink()
     
     print("\n" + "-"*60)
     print("  Folder Structure:")
     for name, path in folders.items():
-        file_count = len(list(path.glob('*'))) if path.exists() else 0
-        print(f"    📁 {name}/ ({file_count} files)")
+        if not name.startswith('viz_') and name != 'weights_configs':
+            file_count = len(list(path.glob('*'))) if path.exists() else 0
+            print(f"    📁 {name}/ ({file_count} files)")
     print("-"*60)
     print("  Export Summary:")
     for key, path in exports.items():
@@ -682,6 +475,477 @@ def export_training_outputs(
     print("-"*60 + "\n")
     
     return exports
+
+
+def rename_weight_files(weights_dir: Path, exp_name: str) -> None:
+    """
+    Rename weight files with dynamic naming convention.
+    best.pt -> {exp_name}_best.pt
+    last.pt -> {exp_name}_last.pt
+    
+    Args:
+        weights_dir: Path to weights directory
+        exp_name: Experiment folder name
+    """
+    mappings = [
+        ('best.pt', f'{exp_name}_best.pt'),
+        ('last.pt', f'{exp_name}_last.pt'),
+    ]
+    
+    for old_name, new_name in mappings:
+        old_path = weights_dir / old_name
+        new_path = weights_dir / new_name
+        if old_path.exists() and not new_path.exists():
+            shutil.move(str(old_path), str(new_path))
+            print(f"[Export] Renamed: {old_name} -> {new_name}")
+
+
+def copy_args_yaml_with_naming(experiment_path: Path, configs_dir: Path, exp_name: str) -> Optional[Path]:
+    """
+    Copy args.yaml to configs folder with proper naming.
+    
+    Args:
+        experiment_path: Path to experiment folder
+        configs_dir: Destination configs directory
+        exp_name: Experiment folder name
+        
+    Returns:
+        Path to copied file or None
+    """
+    try:
+        args_file = experiment_path / "args.yaml"
+        if args_file.exists():
+            dest = configs_dir / f"{exp_name}_args.yaml"
+            shutil.copy(str(args_file), str(dest))
+            return dest
+    except Exception as e:
+        print(f"[Export] Failed to copy args.yaml: {e}")
+    return None
+
+
+def generate_stats_files(
+    experiment_path: Path,
+    stats_dir: Path,
+    config: Dict[str, Any],
+    exp_name: str,
+) -> Dict[str, Optional[Path]]:
+    """
+    Generate stats files as per specification:
+    - epoch_metrics.csv
+    - training_summary.json
+    - model_comparison.csv
+    - hardware_stats.csv
+    
+    Args:
+        experiment_path: Path to experiment folder
+        stats_dir: Stats directory path
+        config: Training configuration
+        exp_name: Experiment name
+        
+    Returns:
+        Dictionary of generated file paths
+    """
+    exports = {}
+    results_csv = experiment_path / "results.csv"
+    
+    try:
+        # 1. epoch_metrics.csv - Per-epoch: loss, mAP, precision, recall, lr
+        if results_csv.exists():
+            epoch_metrics_path = stats_dir / "epoch_metrics.csv"
+            shutil.copy(str(results_csv), str(epoch_metrics_path))
+            exports['epoch_metrics'] = epoch_metrics_path
+            print(f"[Export] epoch_metrics.csv saved")
+        
+        # 2. training_summary.json - Final stats: best_epoch, total_time, best_mAP, config
+        summary_path = stats_dir / "training_summary.json"
+        summary = generate_training_summary(results_csv, config, exp_name)
+        with open(summary_path, 'w') as f:
+            json.dump(summary, f, indent=2)
+        exports['training_summary'] = summary_path
+        print(f"[Export] training_summary.json saved")
+        
+        # 3. model_comparison.csv - Columns for comparing multiple runs
+        comparison_path = stats_dir / "model_comparison.csv"
+        generate_model_comparison_csv(results_csv, config, comparison_path, exp_name)
+        exports['model_comparison'] = comparison_path
+        print(f"[Export] model_comparison.csv saved")
+        
+        # 4. hardware_stats.csv - GPU/CPU usage (if available from logs)
+        hardware_path = stats_dir / "hardware_stats.csv"
+        generate_hardware_stats_csv(experiment_path, hardware_path)
+        exports['hardware_stats'] = hardware_path
+        print(f"[Export] hardware_stats.csv saved")
+        
+    except Exception as e:
+        print(f"[Export] Stats generation error: {e}")
+    
+    return exports
+
+
+def generate_training_summary(results_csv: Path, config: Dict[str, Any], exp_name: str) -> Dict[str, Any]:
+    """Generate training_summary.json content."""
+    import csv
+    
+    summary = {
+        "experiment_name": exp_name,
+        "generated_at": datetime.now().isoformat(),
+        "config": config,
+        "best_epoch": 0,
+        "total_epochs": 0,
+        "best_mAP50": 0.0,
+        "best_mAP50_95": 0.0,
+        "final_precision": 0.0,
+        "final_recall": 0.0,
+    }
+    
+    if not results_csv.exists():
+        return summary
+    
+    try:
+        with open(results_csv, 'r') as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        
+        if rows:
+            summary["total_epochs"] = len(rows)
+            
+            # Clean column names
+            cleaned_rows = [{k.strip(): v for k, v in row.items()} for row in rows]
+            
+            # Find mAP columns
+            sample_row = cleaned_rows[0]
+            map50_col = next((c for c in sample_row.keys() if 'mAP50' in c and '95' not in c), None)
+            map5095_col = next((c for c in sample_row.keys() if 'mAP50-95' in c), None)
+            prec_col = next((c for c in sample_row.keys() if 'precision' in c.lower()), None)
+            rec_col = next((c for c in sample_row.keys() if 'recall' in c.lower()), None)
+            
+            # Find best epoch
+            if map5095_col:
+                best_idx = 0
+                best_val = 0.0
+                for i, row in enumerate(cleaned_rows):
+                    val = float(row.get(map5095_col, 0) or 0)
+                    if val > best_val:
+                        best_val = val
+                        best_idx = i
+                summary["best_epoch"] = best_idx + 1
+                summary["best_mAP50_95"] = best_val
+            
+            if map50_col:
+                summary["best_mAP50"] = max(float(r.get(map50_col, 0) or 0) for r in cleaned_rows)
+            
+            # Final values
+            last_row = cleaned_rows[-1]
+            if prec_col:
+                summary["final_precision"] = float(last_row.get(prec_col, 0) or 0)
+            if rec_col:
+                summary["final_recall"] = float(last_row.get(rec_col, 0) or 0)
+                
+    except Exception as e:
+        summary["error"] = str(e)
+    
+    return summary
+
+
+def generate_model_comparison_csv(results_csv: Path, config: Dict[str, Any], output_path: Path, exp_name: str) -> None:
+    """Generate model_comparison.csv with key metrics for comparing runs."""
+    import csv
+    
+    # Calculate metrics
+    metrics = {
+        "experiment": exp_name,
+        "model": config.get('model', ''),
+        "epochs": config.get('epochs', 0),
+        "img_size": config.get('img_size', 0),
+        "optimizer": config.get('optimizer', ''),
+        "batch": config.get('batch_size', 0),
+        "mAP50": 0.0,
+        "mAP50_95": 0.0,
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1": 0.0,
+        "train_time": "N/A",
+    }
+    
+    if results_csv.exists():
+        try:
+            with open(results_csv, 'r') as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+            
+            if rows:
+                cleaned_rows = [{k.strip(): v for k, v in row.items()} for row in rows]
+                sample_row = cleaned_rows[0]
+                
+                map50_col = next((c for c in sample_row.keys() if 'mAP50' in c and '95' not in c), None)
+                map5095_col = next((c for c in sample_row.keys() if 'mAP50-95' in c), None)
+                prec_col = next((c for c in sample_row.keys() if 'precision' in c.lower()), None)
+                rec_col = next((c for c in sample_row.keys() if 'recall' in c.lower()), None)
+                
+                last_row = cleaned_rows[-1]
+                if map50_col:
+                    metrics["mAP50"] = float(last_row.get(map50_col, 0) or 0)
+                if map5095_col:
+                    metrics["mAP50_95"] = float(last_row.get(map5095_col, 0) or 0)
+                if prec_col:
+                    metrics["precision"] = float(last_row.get(prec_col, 0) or 0)
+                if rec_col:
+                    metrics["recall"] = float(last_row.get(rec_col, 0) or 0)
+                
+                # Calculate F1
+                p, r = metrics["precision"], metrics["recall"]
+                metrics["f1"] = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+        except Exception:
+            pass
+    
+    # Write CSV
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=metrics.keys())
+        writer.writeheader()
+        writer.writerow(metrics)
+
+
+def generate_hardware_stats_csv(experiment_path: Path, output_path: Path) -> None:
+    """Generate hardware_stats.csv placeholder."""
+    import csv
+    
+    # Check for GPU logs in parent logs folder
+    headers = ["epoch", "gpu_util", "vram_peak", "cpu_util", "ram_peak", "throughput_img_sec"]
+    
+    with open(output_path, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(headers)
+        # Placeholder row - actual data would come from monitoring
+        writer.writerow(["1", "N/A", "N/A", "N/A", "N/A", "N/A"])
+
+
+def generate_visualization_guides(folders: Dict[str, Path]) -> None:
+    """
+    Generate interpretation guide txt files for each visualization.
+    
+    Creates *_guide_and_interpretation.txt files for:
+    - curves/: loss_curves, precision_recall, PR_curve, P_curve, R_curve, F1_curve
+    - matrices/: confusion_matrix, labels_correlogram
+    - samples/: val_batch_predictions, train_batch_samples
+    - overviews/: results, Box_curve, labels
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Curves guides
+    curves_guides = {
+        'loss_curves': """# Loss Curves Interpretation Guide
+Generated: {timestamp}
+
+## What This Shows
+Training and validation loss curves over epochs.
+
+## Key Metrics
+- Box Loss: Bounding box regression accuracy
+- Classification Loss: Class prediction accuracy
+- DFL Loss: Distribution focal loss
+
+## Interpretation
+- GOOD: Both losses decrease smoothly and converge
+- WARNING: Val loss increases while train loss decreases = Overfitting
+- GOOD: Small gap between train/val = Good generalization
+""",
+        'precision_recall': """# Precision-Recall Interpretation Guide
+Generated: {timestamp}
+
+## What This Shows
+Trade-off between precision and recall across confidence thresholds.
+
+## Key Metrics
+- Precision: TP / (TP + FP) - How many detections are correct
+- Recall: TP / (TP + FN) - How many objects were found
+
+## Interpretation
+- GOOD: Curve stays high (close to top-right corner)
+- Area under curve (AUC) = Average Precision (AP)
+- Higher AUC = Better model performance
+""",
+        'PR_curve': """# PR Curve (Precision-Recall Curve) Guide
+Generated: {timestamp}
+
+## What This Shows
+Precision vs Recall at different confidence thresholds.
+
+## Interpretation
+- Ideal curve hugs top-right corner
+- Steep drop indicates confidence threshold sensitivity
+- Use to choose optimal confidence threshold for deployment
+""",
+        'P_curve': """# P Curve (Precision-Confidence) Guide
+Generated: {timestamp}
+
+## What This Shows
+Precision at different confidence thresholds.
+
+## Interpretation
+- Higher confidence = Higher precision (fewer false positives)
+- Find the knee point for optimal confidence threshold
+- Steep curves indicate clear decision boundaries
+""",
+        'R_curve': """# R Curve (Recall-Confidence) Guide
+Generated: {timestamp}
+
+## What This Shows
+Recall at different confidence thresholds.
+
+## Interpretation
+- Lower confidence = Higher recall (more detections)
+- Trade-off: More detections = more false positives
+- Use for applications where missing objects is costly
+""",
+        'F1_curve': """# F1 Curve Guide
+Generated: {timestamp}
+
+## What This Shows
+F1 score (harmonic mean of precision and recall) vs confidence.
+
+## Key Formula
+F1 = 2 * (Precision * Recall) / (Precision + Recall)
+
+## Interpretation
+- Peak indicates optimal confidence threshold
+- GOOD: High peak (>0.8) with broad plateau
+- Use peak confidence for balanced precision/recall
+""",
+    }
+    
+    # Matrices guides
+    matrices_guides = {
+        'confusion_matrix': """# Confusion Matrix Interpretation Guide
+Generated: {timestamp}
+
+## What This Shows
+Predicted vs actual class distribution for all detections.
+
+## Reading the Matrix
+- Diagonal: Correct predictions (True Positives)
+- Off-diagonal: Misclassifications
+- Row: Actual class, Column: Predicted class
+
+## Interpretation
+- GOOD: Strong diagonal, weak off-diagonal
+- Common confusions appear as bright off-diagonal cells
+- Use to identify problematic class pairs
+""",
+        'labels_correlogram': """# Labels Correlogram Interpretation Guide
+Generated: {timestamp}
+
+## What This Shows
+Correlation between bounding box dimensions and positions.
+
+## Subplots
+- x, y: Center position distributions
+- width, height: Box size distributions
+- Scatter plots: Correlations between dimensions
+
+## Interpretation
+- Clustered distributions = Consistent object sizes/positions
+- Wide spreads = High variability in dataset
+- Use to understand dataset characteristics
+""",
+    }
+    
+    # Samples guides
+    samples_guides = {
+        'val_batch_predictions': """# Validation Batch Predictions Guide
+Generated: {timestamp}
+
+## What This Shows
+Model predictions on validation images with bounding boxes.
+
+## Elements
+- Colored boxes: Predicted bounding boxes
+- Labels: Class name and confidence score
+- Ground truth may be shown for comparison
+
+## Interpretation
+- Check box alignment with objects
+- Verify class predictions
+- Note confidence scores for typical detections
+""",
+        'train_batch_samples': """# Training Batch Samples Guide
+Generated: {timestamp}
+
+## What This Shows
+Augmented training images as seen by the model.
+
+## Elements
+- Applied augmentations (mosaic, flip, color jitter)
+- Ground truth bounding boxes
+- Class labels
+
+## Interpretation
+- Verify augmentations are appropriate
+- Check label correctness
+- Ensure objects remain recognizable after augmentation
+""",
+    }
+    
+    # Overviews guides
+    overviews_guides = {
+        'results': """# Results Overview Interpretation Guide
+Generated: {timestamp}
+
+## What This Shows
+Combined training metrics dashboard.
+
+## Panels
+- Loss curves (train/val for box, cls, dfl)
+- Precision, Recall over epochs
+- mAP50, mAP50-95 over epochs
+
+## Interpretation
+- All metrics should improve over epochs
+- Convergence indicates training completion
+- Divergence between train/val indicates overfitting
+""",
+        'Box_curve': """# Box Curve Interpretation Guide
+Generated: {timestamp}
+
+## What This Shows
+Bounding box IoU (Intersection over Union) distribution.
+
+## Interpretation
+- Higher IoU = Better localization
+- IoU > 0.5: Acceptable detection
+- IoU > 0.75: Good localization
+- IoU > 0.9: Excellent localization
+""",
+        'labels': """# Labels Distribution Guide
+Generated: {timestamp}
+
+## What This Shows
+Dataset label statistics and distributions.
+
+## Elements
+- Class frequency histogram
+- Bounding box center heatmap
+- Box dimension distribution
+
+## Interpretation
+- Check for class imbalance
+- Identify position/size biases
+- Use to understand dataset characteristics
+""",
+    }
+    
+    # Write all guides
+    all_guides = [
+        (folders['viz_curves'], curves_guides),
+        (folders['viz_matrices'], matrices_guides),
+        (folders['viz_samples'], samples_guides),
+        (folders['viz_overviews'], overviews_guides),
+    ]
+    
+    for folder, guides in all_guides:
+        for name, content in guides.items():
+            guide_path = folder / f"{name}_guide_and_interpretation.txt"
+            with open(guide_path, 'w') as f:
+                f.write(content.format(timestamp=timestamp))
 
 
 def load_or_download_model(model_name: str, weights_dir: Optional[Path] = None) -> YOLO:
@@ -713,13 +977,13 @@ def load_or_download_model(model_name: str, weights_dir: Optional[Path] = None) 
         if downloaded.exists():
             shutil.copy(downloaded, local_model)
             print(f'Model saved to: {local_model}')
-        
-        # Clean up model file if downloaded to current working directory
-        # (Ultralytics sometimes downloads to cwd in addition to settings dir)
-        cwd_model = Path(model_name)
-        if cwd_model.exists() and cwd_model.absolute() != local_model.absolute():
-            cwd_model.unlink()
-            print(f'Cleaned up: {cwd_model}')
+    
+    # Always clean up model file if it exists in current working directory
+    # (Ultralytics sometimes downloads/creates .pt file in cwd as a side effect)
+    cwd_model = Path(model_name)
+    if cwd_model.exists() and cwd_model.absolute() != local_model.absolute():
+        cwd_model.unlink()
+        print(f'Cleaned up: {cwd_model}')
     
     return model
 
@@ -794,6 +1058,16 @@ def run_training(
     Returns:
         Training results
     """
+    # ===========================================================================
+    # PORTABILITY: Update data.yaml path to current location
+    # This ensures the project works on any machine/directory
+    # ===========================================================================
+    try:
+        data_yaml = str(update_data_yaml_path(data_yaml))
+    except Exception as e:
+        print(f"[Warning] Could not update data.yaml path: {e}")
+        # Continue with original path
+    
     # Initialize Python logging if available and log_dir provided
     logger = None
     if LOGGING_AVAILABLE and log_dir:

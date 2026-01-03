@@ -28,6 +28,9 @@ from .utils import (
     estimate_training_time,
     # Timestamp utilities
     get_timestamp,
+    # Portability utilities (data.yaml path management)
+    update_data_yaml_path,
+    ensure_portable_data_yaml,
 )
 
 __all__ = [
@@ -53,4 +56,7 @@ __all__ = [
     'estimate_training_time',
     # Timestamp
     'get_timestamp',
+    # Portability
+    'update_data_yaml_path',
+    'ensure_portable_data_yaml',
 ]

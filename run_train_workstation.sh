@@ -9,6 +9,7 @@
 #   VRAM: 20GB (20475 MiB)
 #   Driver: 573.44
 #   CUDA: 12.8
+#   RAM: 32GB+
 #
 # This configuration uses:
 #   - Batch size 16 (optimal for 20GB VRAM)
@@ -18,6 +19,16 @@
 #===============================================================================
 
 set -e  # Exit on error
+
+#===============================================================================
+# FEATURES & TOGGLES
+#===============================================================================
+REST_TIME_PER_RUN=300        # GPU cooldown between runs (seconds, 0=disabled)
+                             # Reference: 60=1min, 150=2.5min, 300=5min, 600=10min
+CLEAR_LOGS_ON_START=true     # Delete previous logs before training
+CLEAR_OUTPUT_ON_START=false  # Delete previous model outputs before training
+SKIP_EXISTING=false          # Skip if model with same params already exists
+#===============================================================================
 
 # Get script directory (modules are in the same directory)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -90,28 +101,6 @@ YOLO_MODELS=(
 # Select first model from the array (for quick reference)
 YOLO_MODEL="${YOLO_MODELS[0]}"
 
-# Skip Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-# Skip training if model with same parameters already exists
-SKIP_EXISTING=false          # true=skip if trained, false=always train (new timestamp or overwrite)
-
-# Log Management Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-# Control whether to clear old logs at the start of training or keep them
-# true  = Delete all previous logs before starting new training runs
-# false = Keep old logs, new logs will be created with unique timestamps
-CLEAR_LOGS_ON_START=false    # true=clear old logs, false=keep old logs (default)
-
-# Rest Time Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-# Time to rest between training runs (allows GPU to cool down)
-# Only applies when training multiple combinations (TOTAL_COMBINATIONS > 1)
-# Set to 0 to disable rest time
-REST_TIME_PER_RUN=1200       # Rest time in seconds (default: 1200 = 20 minutes)
-                             # Reference: 0=disabled, 60=1min, 120=2min, 300=5min,
-                             #            600=10min, 900=15min, 1200=20min, 1800=30min,
-                             #            2700=45min, 3600=1hr
-
 # Dataset Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 # Parent directory is defined in modules/common_functions.sh (synced with config.py)
@@ -166,7 +155,7 @@ IMG_SIZE_LIST=(
     # 320                   # fast, low resolution
     # 512                   # medium resolution
     # 608                   # from microspores.cfg (width/height=608)
-    #640                    # standard resolution
+    640                    # standard resolution
     # 800                   # high resolution
     1024                    # very high resolution
     # 1280                  # maximum (for small objects)
@@ -398,10 +387,10 @@ RECT_LIST=(
 # Grayscale Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 # Train with grayscale images (useful for microscopy where color is not informative)
-# false = RGB (3 channels), true = grayscale (converted to 3-channel gray)
+# 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 GRAYSCALE_LIST=(
-    false                   # RGB color images (default)
-    true                  # grayscale images
+    "RGB"                   # RGB color images (default)
+    "grayscale"             # grayscale images
 )
 
 # Model & Output Configuration
@@ -558,6 +547,30 @@ fi
 echo ""
 
 #===============================================================================
+# OUTPUT MANAGEMENT - Clear or Keep Old Trained Models
+#===============================================================================
+
+OUTPUT_DIR="${SCRIPT_DIR}/trained_models_output"
+
+if [ "$CLEAR_OUTPUT_ON_START" = true ]; then
+    if [ -d "${OUTPUT_DIR}" ] && [ "$(ls -A ${OUTPUT_DIR} 2>/dev/null)" ]; then
+        # Count existing output directories
+        OUTPUT_COUNT=$(find "${OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+        
+        if [ "$OUTPUT_COUNT" -gt 0 ]; then
+            print_warning "CLEAR_OUTPUT_ON_START is enabled. Clearing ${OUTPUT_COUNT} existing trained model(s)..."
+            rm -rf "${OUTPUT_DIR:?}"/*
+            print_success "Old trained models cleared successfully."
+        fi
+    else
+        print_info "No existing trained models to clear."
+    fi
+else
+    print_info "CLEAR_OUTPUT_ON_START is disabled. Existing trained models will be preserved."
+fi
+echo ""
+
+#===============================================================================
 # CALCULATE TOTAL COMBINATIONS
 #===============================================================================
 
@@ -616,7 +629,7 @@ generate_exp_name() {
     
     # Add grayscale indicator
     local gray_str="rgb"
-    if [ "$grayscale" = "true" ]; then
+    if [ "$grayscale" = "grayscale" ]; then
         gray_str="gray"
     fi
     
@@ -639,7 +652,7 @@ check_training_exists() {
     
     # Add grayscale indicator
     local gray_str="rgb"
-    if [ "$grayscale" = "true" ]; then
+    if [ "$grayscale" = "grayscale" ]; then
         gray_str="gray"
     fi
     local pattern="${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_*"
@@ -678,6 +691,12 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
         SKIPPED_RUNS+=("${DATASET_NAME}_*")
         continue
     fi
+    
+    # =========================================================================
+    # PORTABILITY: Update data.yaml path to current location
+    # This ensures the project works on any machine/directory
+    # =========================================================================
+    update_data_yaml_path "${DATA_YAML}" "${DATASET_PATH}"
     
     # Use first values for less commonly varied parameters
     PATIENCE="${PATIENCE_LIST[0]}"
@@ -727,7 +746,7 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
     MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
     
     # Grayscale indicator for display
-    if [ "$GRAYSCALE" = "true" ]; then
+    if [ "$GRAYSCALE" = "grayscale" ]; then
         GRAY_DISPLAY="gray"
     else
         GRAY_DISPLAY="rgb"

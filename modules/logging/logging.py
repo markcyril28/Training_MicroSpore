@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field, asdict
 
-# Get base directory
-BASE_DIR = Path(__file__).parent.parent
+# Get base directory (C_TRAINING - grandparent of logging folder)
+# Path: modules/logging/logging.py -> modules/logging -> modules -> C_TRAINING
+BASE_DIR = Path(__file__).parent.parent.parent
 LOGS_DIR = BASE_DIR / "logs"
 
 
