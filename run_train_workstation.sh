@@ -26,7 +26,7 @@ set -e  # Exit on error
 REST_TIME_PER_RUN=300        # GPU cooldown between runs (seconds, 0=disabled)
                              # Reference: 60=1min, 150=2.5min, 300=5min, 600=10min
 CLEAR_LOGS_ON_START=true     # Delete previous logs before training
-CLEAR_OUTPUT_ON_START=false  # Delete previous model outputs before training
+CLEAR_OUTPUT_ON_START=true  # Delete previous model outputs before training
 SKIP_EXISTING=false          # Skip if model with same params already exists
 #===============================================================================
 
@@ -74,28 +74,28 @@ YOLO_MODELS=(
     # "yolov8s.pt"    # small    - fast, good accuracy (DEFAULT)
     #"yolov8m.pt"      # medium   - balanced
     # "yolov8l.pt"    # large    - slower, better accuracy
-    "yolov8x.pt"    # xlarge   - slowest, best accuracy
+    #"yolov8x.pt"    # xlarge   - slowest, best accuracy
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
     # "yolov9s.pt"    # small    - fast, lightweight
     #"yolov9m.pt"    # medium   - balanced
     # "yolov9c.pt"    # compact  - efficient accuracy
-    "yolov9e.pt"    # extended - best accuracy
+    #"yolov9e.pt"    # extended - best accuracy
     
     # YOLOv10 variants
     # "yolov10n.pt"   # nano     - fastest
     # "yolov10s.pt"   # small    - fast
     # "yolov10m.pt"   # medium   - balanced
     # "yolov10l.pt"   # large    - slower
-    "yolov10x.pt"   # xlarge   - best accuracy
+    #"yolov10x.pt"   # xlarge   - best accuracy
     
     # YOLO11 variants - Latest (note: named 'yolo11' not 'yolov11')
     # "yolo11n.pt"    # nano     - fastest
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
     # "yolo11l.pt"    # large    - slower
-    "yolo11x.pt"    # xlarge   - best accuracy
+    #"yolo11x.pt"    # xlarge   - best accuracy
 )
 
 # Select first model from the array (for quick reference)
