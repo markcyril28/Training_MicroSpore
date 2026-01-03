@@ -22,7 +22,7 @@ NC='\033[0m' # No Color
 # These values are used across all scripts for consistency
 
 # Conda environment name
-COMMON_ENV_NAME="training"
+COMMON_ENV_NAME="train"
 
 # Python version
 COMMON_PYTHON_VERSION="3.10"
