@@ -217,6 +217,16 @@ OPTIMIZER_LIST=(
     # "RAdam"               # Rectified Adam
 )
 
+# Grayscale Configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# Train with grayscale images (useful for microscopy where color is not informative)
+# 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
+GRAYSCALE_LIST=(
+    "RGB"                   # RGB color images (default)
+    "grayscale"             # grayscale images
+)
+
+
 # Augmentation Parameters
 # ─────────────────────────────────────────────────────────────────────────────
 # Higher values = more aggressive augmentation = better generalization but slower
@@ -385,14 +395,6 @@ RECT_LIST=(
     # true                  # rectangular images (faster)
 )
 
-# Grayscale Configuration
-# ─────────────────────────────────────────────────────────────────────────────
-# Train with grayscale images (useful for microscopy where color is not informative)
-# 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
-GRAYSCALE_LIST=(
-    "RGB"                   # RGB color images (default)
-    "grayscale"             # grayscale images
-)
 
 # Model & Output Configuration
 # ─────────────────────────────────────────────────────────────────────────────
