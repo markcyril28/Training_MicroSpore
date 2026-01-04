@@ -226,7 +226,7 @@ echo ""
 
 print_header "Installing system utilities (ncurses, pigz)"
 
-conda install -c conda-forge ncurses pigz -y
+mamba install -c conda-forge ncurses pigz -y
 
 print_success "ncurses and pigz installed"
 echo ""
