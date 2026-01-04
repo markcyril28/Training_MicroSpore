@@ -111,9 +111,9 @@ YOLO_MODEL="${YOLO_MODELS[0]}"
 # Each dataset should contain a data.yaml file and Train/Test subdirectories
 # Add multiple datasets to train models on each sequentially
 DATASET_LIST=(
-    #"${COMMON_DATASET_NAME}"  # Default dataset from config (Dataset_1)
-    "Dataset_2"             # Additional dataset (uncomment to add)
-    # "Dataset_3"             # Another dataset (uncomment to add)
+    #"Dataset_1_TEST"              # Test dataset
+    "Dataset_2_OPTIMIZATION"       # Optimization dataset (active)
+    # "Dataset_3_FINAL_RUN"        # Final run dataset (uncomment to add)
 )
 
 # Default dataset name (first in list)
