@@ -7,9 +7,10 @@
 # WORKSTATION SPECS (Optimized for):
 #   GPU: NVIDIA RTX 4000 Ada Generation
 #   VRAM: 20GB (20475 MiB)
+#   CPU: 16 threads
 #   Driver: 573.44
 #   CUDA: 12.8
-#   RAM: 32GB+
+#   RAM: 128 GB
 #
 # This configuration uses:
 #   - Batch size 16 (optimal for 20GB VRAM)
@@ -23,11 +24,11 @@ set -e  # Exit on error
 #===============================================================================
 # FEATURES & TOGGLES
 #===============================================================================
-REST_TIME_PER_RUN=300        # GPU cooldown between runs (seconds, 0=disabled)
-                             # Reference: 60=1min, 150=2.5min, 300=5min, 600=10min
-CLEAR_LOGS_ON_START=true     # Delete previous logs before training
-CLEAR_OUTPUT_ON_START=true  # Delete previous model outputs before training
-SKIP_EXISTING=false          # Skip if model with same params already exists
+REST_TIME_PER_RUN=60         # GPU cooldown between runs (seconds, 0=disabled)
+                             # Reference: 60=1min (Ada has excellent thermals)
+CLEAR_LOGS_ON_START=false     # Delete previous logs before training
+CLEAR_OUTPUT_ON_START=false  # Delete previous model outputs before training
+SKIP_EXISTING=true          # Skip if model with same params already exists
 #===============================================================================
 
 # Get script directory (modules are in the same directory)
@@ -72,30 +73,30 @@ YOLO_MODELS=(
     # YOLOv8 variants - Recommended
     # "yolov8n.pt"    # nano     - fastest, lowest accuracy
     # "yolov8s.pt"    # small    - fast, good accuracy (DEFAULT)
-    #"yolov8m.pt"      # medium   - balanced
+    # "yolov8m.pt"    # medium   - balanced
     # "yolov8l.pt"    # large    - slower, better accuracy
-    #"yolov8x.pt"    # xlarge   - slowest, best accuracy
+    "yolov8x.pt"    # xlarge   - slowest, best accuracy
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
     # "yolov9s.pt"    # small    - fast, lightweight
-    #"yolov9m.pt"    # medium   - balanced
+    # "yolov9m.pt"    # medium   - balanced
     # "yolov9c.pt"    # compact  - efficient accuracy
-    #"yolov9e.pt"    # extended - best accuracy
+    "yolov9e.pt"    # extended - best accuracy
     
     # YOLOv10 variants
     # "yolov10n.pt"   # nano     - fastest
     # "yolov10s.pt"   # small    - fast
     # "yolov10m.pt"   # medium   - balanced
     # "yolov10l.pt"   # large    - slower
-    #"yolov10x.pt"   # xlarge   - best accuracy
+    "yolov10x.pt"   # xlarge   - best accuracy
     
     # YOLO11 variants - Latest (note: named 'yolo11' not 'yolov11')
     # "yolo11n.pt"    # nano     - fastest
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
     # "yolo11l.pt"    # large    - slower
-    #"yolo11x.pt"    # xlarge   - best accuracy
+    "yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for RTX 4000 Ada)
 )
 
 # Select first model from the array (for quick reference)
@@ -110,8 +111,8 @@ YOLO_MODEL="${YOLO_MODELS[0]}"
 # Each dataset should contain a data.yaml file and Train/Test subdirectories
 # Add multiple datasets to train models on each sequentially
 DATASET_LIST=(
-    "${COMMON_DATASET_NAME}"  # Default dataset from config (Dataset_1)
-    # "Dataset_2"             # Additional dataset (uncomment to add)
+    #"${COMMON_DATASET_NAME}"  # Default dataset from config (Dataset_1)
+    "Dataset_2"             # Additional dataset (uncomment to add)
     # "Dataset_3"             # Another dataset (uncomment to add)
 )
 
@@ -136,35 +137,35 @@ DEFAULT_DATASET="${DATASET_LIST[0]}"
 # PATIENCE:   ↑ waits longer before stopping            | ↓ stops earlier, saves time
 # WORKERS:    ↑ faster data loading (match CPU cores)   | ↓ less CPU usage
 EPOCHS_LIST=(
-    #10                    # quick test
-    #100                     # standard training
-    # 150                   # extended training
+    # 10                    # quick test
+    # 100                   # standard training
+    #150                     # optimal training (early stopping will trigger if converged)
     200                   # long training
     #300                   # maximum training
+)
+
+PATIENCE_LIST=(
+    # 50                    # standard patience
+    # 25                    # quick stopping
+    150                     # balanced patience (optimal for convergence detection)
 )
 
 BATCH_SIZE_LIST=(
     # 4                     # conservative (low VRAM)
     # 8                     # low VRAM / large images
-    16                      # optimal for RTX 4000 Ada (20GB VRAM)
-    # 32                    # aggressive (20GB+ VRAM with smaller images)
+    # 16                    # moderate for RTX 4000 Ada
+    32                      # optimal for RTX 4000 Ada 20GB VRAM (max throughput)
     # 64                    # very high VRAM (A100/H100)
 )
 
 IMG_SIZE_LIST=(
-    # 320                   # fast, low resolution
+    #320                   # fast, low resolution
     # 512                   # medium resolution
     # 608                   # from microspores.cfg (width/height=608)
-    640                    # standard resolution
-    # 800                   # high resolution
-    1024                    # very high resolution
+    # 640                   # standard resolution
+    800                     # high resolution (optimal for 20GB VRAM + accuracy)
+    # 1024                  # very high resolution
     # 1280                  # maximum (for small objects)
-)
-
-PATIENCE_LIST=(
-    #50                      # standard patience
-    # 25                    # quick stopping
-    150                   # patient training
 )
 
 WORKERS_LIST=(
@@ -240,7 +241,7 @@ HSV_V_LIST=(
 )
 
 DEGREES_LIST=(
-    #0.0                     # no rotation
+    #0.0                     # no rotation (faster augmentation)
     45.0                  # moderate rotation
     # 90.0                  # quarter rotation
     # 180.0                 # half rotation (orientation-invariant)
@@ -266,9 +267,9 @@ SHEAR_LIST=(
 )
 
 PERSPECTIVE_LIST=(
-    #0.0                     # no perspective warp
+    0.0                     # no perspective warp (faster augmentation)
     # 0.0005                # slight perspective
-    0.001                 # moderate perspective
+    # 0.001                 # moderate perspective
 )
 
 FLIPUD_LIST=(
@@ -306,9 +307,9 @@ COPY_PASTE_LIST=(
 # WARMUP_BIAS_LR:     Initial learning rate for bias during warmup
 # From microspores.cfg: burn_in=1000 batches ≈ 3 epochs with batch 64
 WARMUP_EPOCHS_LIST=(
-    3.0                     # standard warmup (from cfg: burn_in=1000)
+    #3.0                     # standard warmup (from cfg: burn_in=1000)
     # 0.0                   # no warmup
-    # 5.0                   # extended warmup
+    5.0                   # extended warmup
 )
 
 WARMUP_MOMENTUM_LIST=(
@@ -365,9 +366,9 @@ LABEL_SMOOTHING_LIST=(
 # ─────────────────────────────────────────────────────────────────────────────
 # Number of final epochs to disable mosaic augmentation for fine-tuning
 CLOSE_MOSAIC_LIST=(
-    10                      # disable mosaic for last 10 epochs
+    # 10                    # disable mosaic for last 10 epochs
     # 0                     # never disable mosaic
-    # 20                    # disable mosaic for last 20 epochs
+    20                      # disable mosaic for last 20 epochs (better fine-tuning)
 )
 
 # Multi-scale Training
