@@ -57,14 +57,14 @@ ENV_NAME="${COMMON_ENV_NAME}"
 #===============================================================================
 # YOLO VERSION SELECTION
 #===============================================================================
-# Model arrays are defined in common_functions.sh (DRY principle)
+# Model arrays are defined in common_functions.sh
 # YOLOV5_MODELS, YOLOV8_MODELS, YOLOV9_MODELS, YOLOV10_MODELS, YOLO11_MODELS
 
 # All available models for selection
 # Uncomment ONE model to train with. All models below are pre-downloaded.
 YOLO_MODELS=(
     # YOLOv5 variants - Ultralytics versions with 'u' suffix
-    # "yolov5nu.pt"   # nano     - fastest, lowest accuracy
+    #"yolov5nu.pt"   # nano     - fastest, lowest accuracy
     # "yolov5su.pt"   # small    - fast, good accuracy
     # "yolov5mu.pt"   # medium   - balanced
     # "yolov5lu.pt"   # large    - slower, better accuracy
@@ -92,7 +92,7 @@ YOLO_MODELS=(
     "yolov10x.pt"   # xlarge   - best accuracy
     
     # YOLO11 variants - Latest (note: named 'yolo11' not 'yolov11')
-    # "yolo11n.pt"    # nano     - fastest
+    #"yolo11n.pt"    # nano     - fastest
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
     # "yolo11l.pt"    # large    - slower
