@@ -19,12 +19,12 @@
 #   - Mixed precision (AMP) enabled
 #===============================================================================
 
-set -e  # Exit on error
+#set -e  # Exit on error
 
 #===============================================================================
 # FEATURES & TOGGLES
 #===============================================================================
-REST_TIME_PER_RUN=60         # GPU cooldown between runs (seconds, 0=disabled)
+REST_TIME_PER_RUN=120         # GPU cooldown between runs (seconds, 0=disabled)
                              # Reference: 60=1min (Ada has excellent thermals)
 CLEAR_LOGS_ON_START=false     # Delete previous logs before training
 CLEAR_OUTPUT_ON_START=false  # Delete previous model outputs before training
@@ -393,7 +393,6 @@ RECT_LIST=(
     false                   # square images (standard)
     # true                  # rectangular images (faster)
 )
-
 
 # Model & Output Configuration
 # ─────────────────────────────────────────────────────────────────────────────
