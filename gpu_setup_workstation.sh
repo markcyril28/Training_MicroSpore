@@ -3,38 +3,8 @@
 # Microspore Phenotyping - GPU Setup Script for WSL/Ubuntu (Conda-based)
 # Detects, installs, and configures NVIDIA GPU drivers and CUDA for training.
 # Uses common_functions.sh for shared utilities (DRY principle).
-#
-# WORKSTATION SPECS (Target Configuration):
-#   GPU: NVIDIA RTX 4000 Ada Generation
-#   VRAM: 20GB (20475 MiB)
-#   Driver: 573.44
-#   CUDA: 12.8
+# WORKSTATION: RTX 4000 Ada (20GB VRAM) | Driver 573.44 | CUDA 12.8
 #===============================================================================
-
-: << 'WORKSTATION_SPECS'
-nvidia-smi
-Sat Jan  3 11:45:58 2026
-+-----------------------------------------------------------------------------------------+
-| NVIDIA-SMI 570.170                Driver Version: 573.44         CUDA Version: 12.8     |
-|-----------------------------------------+------------------------+----------------------+
-| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
-|                                         |                        |               MIG M. |
-|=========================================+========================+======================|
-|   0  NVIDIA RTX 4000 Ada Gene...    On  |   00000000:01:00.0  On |                  Off |
-| 30%   32C    P8              9W /  130W |     861MiB /  20475MiB |      3%      Default |
-|                                         |                        |                  N/A |
-+-----------------------------------------+------------------------+----------------------+
-
-+-----------------------------------------------------------------------------------------+
-| Processes:                                                                              |
-|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
-|        ID   ID                                                               Usage      |
-|=========================================================================================|
-|  No running processes found                                                             |
-+-----------------------------------------------------------------------------------------+
-
-WORKSTATION_SPECS
 
 set -e  # Exit on error
 
