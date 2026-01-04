@@ -221,14 +221,14 @@ print_success "Conda environment created and activated"
 echo ""
 
 #===============================================================================
-# INSTALL NCURSES (fixes libtinfo warning)
+# INSTALL SYSTEM UTILITIES
 #===============================================================================
 
-print_header "Installing ncurses (fixes libtinfo compatibility)"
+print_header "Installing system utilities (ncurses, pigz)"
 
-conda install -c conda-forge ncurses -y
+conda install -c conda-forge ncurses pigz -y
 
-print_success "ncurses installed"
+print_success "ncurses and pigz installed"
 echo ""
 
 #===============================================================================
