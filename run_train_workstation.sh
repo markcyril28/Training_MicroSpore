@@ -4,7 +4,7 @@
 # Main script for training YOLO models on microspore phenotyping dataset.
 # Uses common_functions.sh for shared utilities (DRY principle).
 #
-# WORKSTATION SPECS (Optimized for):
+# WORKSTATION SPECS:
 #   GPU: NVIDIA RTX 4000 Ada Generation
 #   VRAM: 20GB (20475 MiB)
 #   CPU: 16 threads
