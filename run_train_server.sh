@@ -87,28 +87,28 @@ YOLO_MODELS=(
     # "yolov8s.pt"    # small    - fast, good accuracy
     # "yolov8m.pt"    # medium   - balanced
     # "yolov8l.pt"    # large    - slower, better accuracy
-    #"yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    "yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
     # "yolov9s.pt"    # small    - fast, lightweight
     # "yolov9m.pt"    # medium   - balanced
     # "yolov9c.pt"    # compact  - efficient accuracy
-    #"yolov9e.pt"      # extended - best accuracy (OPTIMAL for MI210)
+    "yolov9e.pt"      # extended - best accuracy (OPTIMAL for MI210)
     
     # YOLOv10 variants
     # "yolov10n.pt"   # nano     - fastest
     # "yolov10s.pt"   # small    - fast
     # "yolov10m.pt"   # medium   - balanced
     # "yolov10l.pt"   # large    - slower
-    #"yolov10x.pt"     # xlarge   - best accuracy (OPTIMAL for MI210)
+    "yolov10x.pt"     # xlarge   - best accuracy (OPTIMAL for MI210)
     
     # YOLO11 variants - Latest (note: named 'yolo11' not 'yolov11')
     # "yolo11n.pt"    # nano     - fastest
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
     # "yolo11l.pt"    # large    - slower
-    #"yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
+    "yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
 )
 
 # Select first model from the array (for quick reference)
