@@ -25,7 +25,7 @@ echo
 
 echo "=== 3. DISPLAY HARDWARE SUMMARY (lshw) ==="
 if command -v lshw >/dev/null 2>&1; then
-    sudo lshw -C display 2>/dev/null || lshw -C display
+    lshw -C display 2>/dev/null
 else
     echo "lshw not installed"
 fi
