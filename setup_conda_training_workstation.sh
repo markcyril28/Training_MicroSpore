@@ -299,8 +299,8 @@ print_header "Setting up Local Modules"
 # Install the local modules package in development mode
 if [ -d "${SCRIPT_DIR}/modules" ]; then
     # Create a minimal setup.py if it doesn't exist
-    if [ ! -f "${SCRIPT_DIR}/setup.py" ]; then
-        cat > "${SCRIPT_DIR}/setup.py" << 'SETUP_PY'
+    if [ ! -f "${SCRIPT_DIR}/modules/setup.py" ]; then
+        cat > "${SCRIPT_DIR}/modules/setup.py" << 'SETUP_PY'
 from setuptools import setup, find_packages
 
 setup(
@@ -315,7 +315,7 @@ SETUP_PY
         print_info "Created setup.py for local modules"
     fi
     
-    pip install -e "${SCRIPT_DIR}" --quiet
+    pip install -e "${SCRIPT_DIR}/modules" --quiet
     print_success "Local modules installed in development mode"
 else
     print_warning "modules folder not found, skipping local module installation"
