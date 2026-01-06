@@ -423,8 +423,8 @@ main() {
             print_error "No NVIDIA GPU detected or drivers not installed."
             echo ""
             echo "For native Linux, install NVIDIA drivers:"
-            echo "  sudo apt-get install nvidia-driver-535"
-            echo "  sudo reboot"
+            echo "  apt-get install nvidia-driver-535"
+            echo "  reboot"
         fi
         exit 1
     fi
