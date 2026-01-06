@@ -372,33 +372,9 @@ echo ""
 
 print_header "Generating Dataset Statistics"
 
-python << STATS_SCRIPT
-import sys
-sys.path.insert(0, '.')
-
-try:
-    from modules.stats import DatasetStats
-    from modules.utils import save_json
-    
-    # Use the default dataset from config
-    dataset_path = "${COMMON_DATASETS_DIR}/${COMMON_DATASET_NAME}"
-    dataset = DatasetStats(dataset_path)
-    stats = dataset.get_full_stats()
-    
-    print(f"  Total images: {stats['total_images']}")
-    print(f"  Total annotations: {stats['total_annotations']}")
-    print(f"  Classes: {len(stats['classes'])}")
-    
-    for split, split_stats in stats.get('splits', {}).items():
-        print(f"  {split.capitalize()}: {split_stats['images']} images, {split_stats['total_annotations']} annotations")
-    
-    # Save stats
-    save_json(stats, f"{dataset_path}/dataset_stats.json")
-    print(f"\n  Stats saved to: {dataset_path}/dataset_stats.json")
-    
-except Exception as e:
-    print(f"  Could not generate stats: {e}")
-STATS_SCRIPT
+# Use the external Python script (DRY principle - no embedded Python)
+DATA_DIR="${COMMON_DATASETS_DIR}/${COMMON_DATASET_NAME}"
+python -m modules.scripts.generate_dataset_stats --dataset-path "${DATA_DIR}" || print_warning "Could not generate dataset stats"
 
 # Run tally.py for class distribution if it exists
 DATA_DIR="${COMMON_DATASETS_DIR}/${COMMON_DATASET_NAME}"

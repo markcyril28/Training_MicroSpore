@@ -9,6 +9,7 @@
 #   Architecture: gfx90a (CDNA2)
 #   Driver: amdgpu
 #   Compute Platform: ROCm 6.x
+#   CPU Threads: 32
 #===============================================================================
 
 : << 'SERVER_SPECS'
@@ -417,7 +418,7 @@ show_optimization_tips() {
     echo "   CACHE=true"
     echo ""
     echo "6. Use multiple workers for data loading:"
-    echo "   WORKERS=8"
+    echo "   WORKERS=16  # ~half of 32 threads"
     echo ""
     
     if command -v rocm-smi &> /dev/null; then
