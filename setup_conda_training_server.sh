@@ -199,7 +199,7 @@ if conda env list | grep -q "^${ENV_NAME} "; then
             
             # Reinstall local modules
             if [ -d "${SCRIPT_DIR}/modules" ]; then
-                pip install -e "${SCRIPT_DIR}" --quiet --upgrade
+                pip install -e "${SCRIPT_DIR}/modules" --quiet --upgrade
             fi
             
             print_success "Environment updated successfully!"
