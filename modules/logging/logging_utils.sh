@@ -153,13 +153,14 @@ get_gpu_stats() {
         nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw \
             --format=csv,noheader,nounits 2>/dev/null | while read line; do
             local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-            local gpu_id=$(echo "$line" | cut -d',' -f1 | xargs)
-            local gpu_name=$(echo "$line" | cut -d',' -f2 | xargs)
-            local gpu_util=$(echo "$line" | cut -d',' -f3 | xargs)
-            local mem_used=$(echo "$line" | cut -d',' -f4 | xargs)
-            local mem_total=$(echo "$line" | cut -d',' -f5 | xargs)
-            local temp=$(echo "$line" | cut -d',' -f6 | xargs)
-            local power=$(echo "$line" | cut -d',' -f7 | xargs)
+            # Use sed to trim whitespace (safer than xargs for special characters)
+            local gpu_id=$(echo "$line" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local gpu_name=$(echo "$line" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local gpu_util=$(echo "$line" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local mem_used=$(echo "$line" | cut -d',' -f4 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local mem_total=$(echo "$line" | cut -d',' -f5 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local temp=$(echo "$line" | cut -d',' -f6 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local power=$(echo "$line" | cut -d',' -f7 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             
             # Calculate memory percentage
             local mem_pct=0
