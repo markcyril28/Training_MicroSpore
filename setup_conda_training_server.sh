@@ -143,6 +143,17 @@ else
     print_info "Using conda (install mamba for faster operations: conda install -n base -c conda-forge mamba)"
 fi
 
+# Helper function: run command with mamba, fallback to conda if mamba fails
+run_pkg_cmd() {
+    local cmd="$1"
+    shift
+    if [ "$PKG_MANAGER" = "mamba" ]; then
+        mamba $cmd "$@" || { print_warning "mamba failed, falling back to conda..."; conda $cmd "$@"; }
+    else
+        conda $cmd "$@"
+    fi
+}
+
 # Check if environment already exists
 if conda env list | grep -q "^${ENV_NAME} "; then
     print_warning "Environment '${ENV_NAME}' already exists."
@@ -162,7 +173,7 @@ if conda env list | grep -q "^${ENV_NAME} "; then
             
             # Update packages
             echo "Updating packages with ${PKG_MANAGER}..."
-            ${PKG_MANAGER} update --all -y || conda update --all -y
+            run_pkg_cmd update --all -y
             
             # Update pip packages - PyTorch ROCm
             echo "Updating PyTorch ROCm packages..."
@@ -198,7 +209,7 @@ if conda env list | grep -q "^${ENV_NAME} "; then
             ;;
         2|recreate|Recreate|RECREATE)
             echo "Removing existing environment..."
-            ${PKG_MANAGER} env remove -n ${ENV_NAME} -y || conda env remove -n ${ENV_NAME} -y
+            run_pkg_cmd env remove -n ${ENV_NAME} -y
             SKIP_TO_VERIFY=false
             ;;
         3|skip|Skip|SKIP)
@@ -247,7 +258,7 @@ echo "Python version: ${PYTHON_VERSION}"
 echo ""
 
 # Create the environment (mamba if available, fallback to conda)
-${PKG_MANAGER} create -n ${ENV_NAME} python=${PYTHON_VERSION} -y || conda create -n ${ENV_NAME} python=${PYTHON_VERSION} -y
+run_pkg_cmd create -n ${ENV_NAME} python=${PYTHON_VERSION} -y
 
 # Activate the environment
 conda activate ${ENV_NAME}
@@ -267,42 +278,24 @@ if [ -d "$ROCM_PATH" ] && [ -n "$CONDA_PREFIX" ]; then
     mkdir -p "$CONDA_PREFIX/etc/conda/activate.d"
     mkdir -p "$CONDA_PREFIX/etc/conda/deactivate.d"
     
-    # Create activation script for ROCm
-    cat > "$CONDA_PREFIX/etc/conda/activate.d/rocm_env.sh" << 'ROCM_ENV'
-#!/bin/bash
-# ROCm environment variables for AMD Instinct MI210
-export ROCM_PATH="/opt/rocm"
-export HIP_PATH="${ROCM_PATH}"
-export PATH="${ROCM_PATH}/bin:${PATH}"
-export LD_LIBRARY_PATH="${ROCM_PATH}/lib:${LD_LIBRARY_PATH}"
-
-# PyTorch ROCm settings for gfx90a (MI210)
-export HSA_OVERRIDE_GFX_VERSION=9.0.10
-
-# HIP visibility for single GPU training
-export HIP_VISIBLE_DEVICES=0
-
-# Reduce MIOpen cache warnings
-export MIOPEN_LOG_LEVEL=1
-
-# MIOpen cache directory (for faster subsequent runs)
-export MIOPEN_USER_DB_PATH="${HOME}/.config/miopen"
-export MIOPEN_SYSTEM_DB_PATH="${ROCM_PATH}/share/miopen/db"
-ROCM_ENV
-    chmod +x "$CONDA_PREFIX/etc/conda/activate.d/rocm_env.sh"
+    # Copy activation script for ROCm from modules
+    ROCM_ACTIVATE_SRC="${SCRIPT_DIR}/modules/setup/rocm_env_activate.sh"
+    ROCM_DEACTIVATE_SRC="${SCRIPT_DIR}/modules/setup/rocm_env_deactivate.sh"
     
-    # Create deactivation script
-    cat > "$CONDA_PREFIX/etc/conda/deactivate.d/rocm_env.sh" << 'ROCM_DEACTIVATE'
-#!/bin/bash
-unset ROCM_PATH
-unset HIP_PATH
-unset HSA_OVERRIDE_GFX_VERSION
-unset HIP_VISIBLE_DEVICES
-unset MIOPEN_LOG_LEVEL
-unset MIOPEN_USER_DB_PATH
-unset MIOPEN_SYSTEM_DB_PATH
-ROCM_DEACTIVATE
-    chmod +x "$CONDA_PREFIX/etc/conda/deactivate.d/rocm_env.sh"
+    if [ -f "$ROCM_ACTIVATE_SRC" ]; then
+        cp "$ROCM_ACTIVATE_SRC" "$CONDA_PREFIX/etc/conda/activate.d/rocm_env.sh"
+        chmod +x "$CONDA_PREFIX/etc/conda/activate.d/rocm_env.sh"
+    else
+        print_warning "ROCm activation script not found: $ROCM_ACTIVATE_SRC"
+    fi
+    
+    # Copy deactivation script for ROCm from modules
+    if [ -f "$ROCM_DEACTIVATE_SRC" ]; then
+        cp "$ROCM_DEACTIVATE_SRC" "$CONDA_PREFIX/etc/conda/deactivate.d/rocm_env.sh"
+        chmod +x "$CONDA_PREFIX/etc/conda/deactivate.d/rocm_env.sh"
+    else
+        print_warning "ROCm deactivation script not found: $ROCM_DEACTIVATE_SRC"
+    fi
     
     # Source the ROCm environment now
     source "$CONDA_PREFIX/etc/conda/activate.d/rocm_env.sh"
@@ -320,7 +313,7 @@ echo ""
 
 print_header "Installing system utilities (ncurses, pigz)"
 
-${PKG_MANAGER} install -c conda-forge ncurses pigz -y || conda install -c conda-forge ncurses pigz -y
+run_pkg_cmd install -c conda-forge ncurses pigz -y
 
 print_success "ncurses and pigz installed"
 echo ""
@@ -399,21 +392,15 @@ print_header "Setting up Local Modules"
 
 # Install the local modules package in development mode
 if [ -d "${SCRIPT_DIR}/modules" ]; then
-    # Create a minimal setup.py if it doesn't exist
+    # Copy setup.py from template if it doesn't exist
     if [ ! -f "${SCRIPT_DIR}/modules/setup.py" ]; then
-        cat > "${SCRIPT_DIR}/modules/setup.py" << 'SETUP_PY'
-from setuptools import setup, find_packages
-
-setup(
-    name="microspore_training",
-    version="1.0.0",
-    packages=find_packages(),
-    python_requires=">=3.8",
-    author="Microspore Phenotyping Team",
-    description="Training modules for microspore phenotyping YOLO models",
-)
-SETUP_PY
-        print_info "Created setup.py for local modules"
+        SETUP_TEMPLATE="${SCRIPT_DIR}/modules/setup/setup_template.py"
+        if [ -f "$SETUP_TEMPLATE" ]; then
+            cp "$SETUP_TEMPLATE" "${SCRIPT_DIR}/modules/setup.py"
+            print_info "Created setup.py from template"
+        else
+            print_warning "setup_template.py not found, cannot create setup.py"
+        fi
     fi
     
     pip install -e "${SCRIPT_DIR}/modules" --quiet
