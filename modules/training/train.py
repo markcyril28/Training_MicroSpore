@@ -1358,6 +1358,9 @@ def run_training(
     close_mosaic: int = 10,
     multi_scale: bool = False,
     rect: bool = False,
+    # Class focus parameters
+    class_focus_mode: str = "none",
+    class_weights: str = "{}",
 ) -> Any:
     """
     Run YOLO model training with specified parameters.
@@ -1417,6 +1420,21 @@ def run_training(
     # Log grayscale mode
     if grayscale:
         print("[Training] Grayscale mode enabled - HSV saturation set to 0")
+    
+    # Log class focus mode
+    if class_focus_mode != "none":
+        print(f"[Training] Class focus mode: {class_focus_mode}")
+        try:
+            weights_dict = json.loads(class_weights) if class_weights else {}
+            if weights_dict:
+                print("[Training] Class weights for balancing:")
+                for cls_name, weight in sorted(weights_dict.items(), key=lambda x: -x[1]):
+                    boost_status = "(boosted)" if weight > 1.0 else ""
+                    print(f"    {cls_name}: {weight:.2f}x {boost_status}")
+                print("[Training] Note: Class weights are logged for reference.")
+                print("           Future versions may implement oversampling based on these weights.")
+        except (json.JSONDecodeError, TypeError):
+            print(f"[Training] Class weights: {class_weights}")
     
     # Train the model
     results = model.train(
@@ -1658,6 +1676,13 @@ def main():
     parser.add_argument('--rect', type=lambda x: x.lower() == 'true', default=False,
                         help='Rectangular training (non-square images)')
     
+    # Class focus / class imbalance parameters
+    parser.add_argument('--class-focus-mode', type=str, default='none',
+                        choices=['none', 'manual', 'auto', 'sqrt'],
+                        help='Class focus mode: none, manual, auto, sqrt')
+    parser.add_argument('--class-weights', type=str, default='{}',
+                        help='JSON string of class weights for oversampling')
+    
     # Device
     parser.add_argument('--device', type=int, default=0)
     
@@ -1701,6 +1726,9 @@ def main():
         'close_mosaic': args.close_mosaic,
         'multi_scale': args.multi_scale,
         'rect': args.rect,
+        # Class focus parameters for addressing class imbalance
+        'class_focus_mode': args.class_focus_mode,
+        'class_weights': args.class_weights,
     }
     
     # Run training
@@ -1752,6 +1780,9 @@ def main():
         close_mosaic=args.close_mosaic,
         multi_scale=args.multi_scale,
         rect=args.rect,
+        # Class focus parameters
+        class_focus_mode=args.class_focus_mode,
+        class_weights=args.class_weights,
         log_dir=args.log_dir if args.log_dir else None,
     )
     

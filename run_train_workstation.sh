@@ -217,14 +217,79 @@ OPTIMIZER_LIST=(
     # "RAdam"               # Rectified Adam
 )
 
-# Grayscale Configuration
+# Color Mode Configuration
 # ─────────────────────────────────────────────────────────────────────────────
-# Train with grayscale images (useful for microscopy where color is not informative)
+# Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
-GRAYSCALE_LIST=(
+COLOR_MODE_LIST=(
     "RGB"                   # RGB color images (default)
     "grayscale"             # grayscale images
 )
+
+# Class Focus Configuration (Address Class Imbalance)
+# ─────────────────────────────────────────────────────────────────────────────
+# Focus training on specific underrepresented classes by oversampling them.
+# Distribution from Dataset_2_OPTIMIZATION (Train counts):
+#   midlate_pollen: 2740, young_microspore: 2128, late_microspore: 1540
+#   mid_microspore: 1452, others: 1229, Blank: 1228, young_pollen: 1110
+#   mature_pollen: 905, tetrad: 801
+#
+# CLASS_FOCUS_MODE:
+#   "none"      - No class focus, use original distribution
+#   "manual"    - Manually specify classes and fold multipliers
+#   "auto"      - Auto-balance based on distribution.txt (target: equal representation)
+#   "sqrt"      - Square root balancing (softer than full equalization)
+#
+# CLASS_FOCUS_CLASSES: Classes to focus on (used in "manual" mode)
+#   Specify class names from: tetrad, young_microspore, mid_microspore,
+#   late_microspore, young_pollen, midlate_pollen, mature_pollen, others, Blank
+#
+# CLASS_FOCUS_FOLD: Oversampling multiplier for focused classes
+#   In "manual" mode: Apply this fold to all specified classes
+#   In "auto"/"sqrt" mode: Maximum fold to apply (caps the multiplier)
+#
+# Example: To oversample tetrad (801) to match midlate_pollen (2740), use fold ~3.4
+
+CLASS_FOCUS_MODE_LIST=(
+    "none"                  # No class focus (original distribution)
+    # "manual"              # Manual class selection with specified fold
+    # "auto"                # Auto-equalize all classes
+    # "sqrt"                # Square root balancing (recommended for mild imbalance)
+)
+
+# Classes to focus on in "manual" mode (comma-separated, no spaces)
+# These are typically the underrepresented classes you want to boost
+CLASS_FOCUS_CLASSES_LIST=(
+    "tetrad,mature_pollen,young_pollen"    # Focus on smallest classes
+    # "tetrad"                              # Focus only on tetrad
+    # "tetrad,mature_pollen"                # Focus on two smallest
+    # "all"                                 # Apply to all classes (for auto/sqrt modes)
+)
+
+# Oversampling fold multiplier
+# In "manual": Multiplies the specified classes by this factor
+# In "auto"/"sqrt": Maximum fold cap to prevent extreme oversampling
+CLASS_FOCUS_FOLD_LIST=(
+    2.0                     # 2x oversampling (moderate boost)
+    # 1.5                   # 1.5x oversampling (gentle boost)
+    # 3.0                   # 3x oversampling (aggressive boost)
+    # 5.0                   # 5x oversampling (very aggressive - use with caution)
+)
+
+# Target class for ratio calculation in "auto" mode
+# The class that others will be balanced towards
+# "max" = balance towards the largest class
+# "median" = balance towards median class count
+# "mean" = balance towards mean class count
+CLASS_FOCUS_TARGET_LIST=(
+    "median"                # Balance towards median (recommended)
+    # "max"                 # Balance towards largest class
+    # "mean"                # Balance towards mean count
+)
+
+# Distribution file path (relative to dataset directory)
+# This file contains class distribution statistics for dynamic fold calculation
+CLASS_DISTRIBUTION_FILE="Distribution/distribution.txt"
 
 # Augmentation Parameters
 # ─────────────────────────────────────────────────────────────────────────────
@@ -457,7 +522,7 @@ FLIPLR="${FLIPLR_LIST[0]}"
 MOSAIC="${MOSAIC_LIST[0]}"
 MIXUP="${MIXUP_LIST[0]}"
 COPY_PASTE="${COPY_PASTE_LIST[0]}"
-GRAYSCALE="${GRAYSCALE_LIST[0]}"
+COLOR_MODE="${COLOR_MODE_LIST[0]}"
 PRETRAINED="${PRETRAINED_LIST[0]}"
 CACHE="${CACHE_LIST[0]}"
 AMP="${AMP_LIST[0]}"
@@ -475,6 +540,12 @@ LABEL_SMOOTHING="${LABEL_SMOOTHING_LIST[0]}"
 CLOSE_MOSAIC="${CLOSE_MOSAIC_LIST[0]}"
 MULTI_SCALE="${MULTI_SCALE_LIST[0]}"
 RECT="${RECT_LIST[0]}"
+
+# Class focus parameters for addressing class imbalance
+CLASS_FOCUS_MODE="${CLASS_FOCUS_MODE_LIST[0]}"
+CLASS_FOCUS_CLASSES="${CLASS_FOCUS_CLASSES_LIST[0]}"
+CLASS_FOCUS_FOLD="${CLASS_FOCUS_FOLD_LIST[0]}"
+CLASS_FOCUS_TARGET="${CLASS_FOCUS_TARGET_LIST[0]}"
 
 #===============================================================================
 # PATHS (Using common configuration - DRY principle)
@@ -572,6 +643,158 @@ fi
 echo ""
 
 #===============================================================================
+# CLASS FOCUS HELPER FUNCTIONS
+#===============================================================================
+
+# Parse distribution.txt and extract class counts for Train set
+# Returns associative array-like output: "class_name:count" lines
+parse_distribution_file() {
+    local dist_file="$1"
+    
+    if [ ! -f "${dist_file}" ]; then
+        echo ""
+        return 1
+    fi
+    
+    # Parse the sorted distribution section to get Train counts
+    # Format: Rank   Class                     Train       Test      Total     Pooled       Temp
+    awk '
+    /^[0-9]+[[:space:]]+[a-zA-Z_]+[[:space:]]+[0-9]+/ {
+        # Skip header lines, extract class name and train count
+        class_name = $2
+        train_count = $3
+        if (train_count ~ /^[0-9]+$/) {
+            print class_name ":" train_count
+        }
+    }
+    ' "${dist_file}"
+}
+
+# Calculate class weights based on distribution and focus mode
+# Arguments: dist_file, mode, focus_classes, fold, target
+# Outputs: JSON-like string for Python consumption
+calculate_class_weights() {
+    local dist_file="$1"
+    local mode="$2"
+    local focus_classes="$3"
+    local max_fold="$4"
+    local target="$5"
+    
+    if [ "$mode" = "none" ] || [ ! -f "${dist_file}" ]; then
+        echo "{}"
+        return
+    fi
+    
+    # Parse distribution file
+    local class_counts
+    class_counts=$(parse_distribution_file "${dist_file}")
+    
+    if [ -z "${class_counts}" ]; then
+        echo "{}"
+        return
+    fi
+    
+    # Convert to Python and calculate weights
+    python3 << PYTHON_SCRIPT
+import sys
+
+# Parse class counts
+class_counts = {}
+for line in """${class_counts}""".strip().split('\n'):
+    if ':' in line:
+        name, count = line.split(':')
+        class_counts[name.strip()] = int(count.strip())
+
+if not class_counts:
+    print("{}")
+    sys.exit(0)
+
+mode = "${mode}"
+focus_classes_str = "${focus_classes}"
+max_fold = float("${max_fold}")
+target = "${target}"
+
+# Parse focus classes
+if focus_classes_str.lower() == "all":
+    focus_classes = list(class_counts.keys())
+else:
+    focus_classes = [c.strip() for c in focus_classes_str.split(',')]
+
+# Calculate target count based on mode
+counts = list(class_counts.values())
+if target == "max":
+    target_count = max(counts)
+elif target == "median":
+    sorted_counts = sorted(counts)
+    mid = len(sorted_counts) // 2
+    target_count = sorted_counts[mid] if len(sorted_counts) % 2 else (sorted_counts[mid-1] + sorted_counts[mid]) // 2
+else:  # mean
+    target_count = sum(counts) // len(counts)
+
+# Calculate weights
+weights = {}
+for cls, count in class_counts.items():
+    if mode == "manual":
+        # Apply fold only to specified classes
+        if cls in focus_classes:
+            weights[cls] = min(max_fold, max(1.0, target_count / count if count > 0 else 1.0))
+        else:
+            weights[cls] = 1.0
+    elif mode == "auto":
+        # Auto-balance all classes towards target
+        if count > 0:
+            fold = target_count / count
+            weights[cls] = min(max_fold, max(1.0, fold))
+        else:
+            weights[cls] = 1.0
+    elif mode == "sqrt":
+        # Square root balancing (softer)
+        if count > 0:
+            fold = (target_count / count) ** 0.5
+            weights[cls] = min(max_fold, max(1.0, fold))
+        else:
+            weights[cls] = 1.0
+    else:
+        weights[cls] = 1.0
+
+# Output as JSON-like string
+import json
+print(json.dumps(weights))
+PYTHON_SCRIPT
+}
+
+# Display class focus configuration
+display_class_focus_info() {
+    local mode="$1"
+    local focus_classes="$2"
+    local fold="$3"
+    local target="$4"
+    local weights_json="$5"
+    
+    echo "  Class Focus Configuration:"
+    echo "    - Mode:           ${mode}"
+    
+    if [ "$mode" != "none" ]; then
+        echo "    - Target Classes: ${focus_classes}"
+        echo "    - Max Fold:       ${fold}x"
+        echo "    - Balance Target: ${target}"
+        
+        if [ -n "${weights_json}" ] && [ "${weights_json}" != "{}" ]; then
+            echo "    - Calculated Weights:"
+            echo "${weights_json}" | python3 -c "
+import sys, json
+weights = json.load(sys.stdin)
+for cls, weight in sorted(weights.items(), key=lambda x: -x[1]):
+    if weight > 1.0:
+        print(f'        {cls}: {weight:.2f}x (boosted)')
+    else:
+        print(f'        {cls}: {weight:.2f}x')
+" 2>/dev/null || echo "        (Unable to parse weights)"
+        fi
+    fi
+}
+
+#===============================================================================
 # CALCULATE TOTAL COMBINATIONS
 #===============================================================================
 
@@ -585,7 +808,7 @@ calculate_total_combinations() {
     total=$((total * ${#IMG_SIZE_LIST[@]}))
     total=$((total * ${#LR0_LIST[@]}))
     total=$((total * ${#OPTIMIZER_LIST[@]}))
-    total=$((total * ${#GRAYSCALE_LIST[@]}))
+    total=$((total * ${#COLOR_MODE_LIST[@]}))
     echo $total
 }
 
@@ -599,7 +822,7 @@ echo "  - Batch Sizes: ${#BATCH_SIZE_LIST[@]} (${BATCH_SIZE_LIST[*]})"
 echo "  - Image Sizes: ${#IMG_SIZE_LIST[@]} (${IMG_SIZE_LIST[*]})"
 echo "  - LR0 values:  ${#LR0_LIST[@]} (${LR0_LIST[*]})"
 echo "  - Optimizers:  ${#OPTIMIZER_LIST[@]} (${OPTIMIZER_LIST[*]})"
-echo "  - Grayscale:   ${#GRAYSCALE_LIST[@]} (${GRAYSCALE_LIST[*]})"
+echo "  - Color Mode:  ${#COLOR_MODE_LIST[@]} (${COLOR_MODE_LIST[*]})"
 echo ""
 print_warning "Total combinations to train: ${TOTAL_COMBINATIONS}"
 echo ""
@@ -622,15 +845,15 @@ generate_exp_name() {
     local img_size="$5"
     local lr0="$6"
     local optimizer="$7"
-    local grayscale="$8"
+    local color_mode="$8"
     local timestamp="$9"
     
     # Format LR0 for filename (remove decimal point)
     local lr0_str=$(echo "${lr0}" | sed 's/\./_/g')
     
-    # Add grayscale indicator
+    # Add color mode indicator
     local gray_str="rgb"
-    if [ "$grayscale" = "grayscale" ]; then
+    if [ "$color_mode" = "grayscale" ]; then
         gray_str="gray"
     fi
     
@@ -646,14 +869,14 @@ check_training_exists() {
     local img_size="$5"
     local lr0="$6"
     local optimizer="$7"
-    local grayscale="$8"
+    local color_mode="$8"
     
     # Format LR0 for filename (remove decimal point)
     local lr0_str=$(echo "${lr0}" | sed 's/\./_/g')
     
-    # Add grayscale indicator
+    # Add color mode indicator
     local gray_str="rgb"
-    if [ "$grayscale" = "grayscale" ]; then
+    if [ "$color_mode" = "grayscale" ]; then
         gray_str="gray"
     fi
     local pattern="${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_*"
@@ -677,7 +900,7 @@ for BATCH_SIZE in "${BATCH_SIZE_LIST[@]}"; do
 for IMG_SIZE in "${IMG_SIZE_LIST[@]}"; do
 for LR0 in "${LR0_LIST[@]}"; do
 for OPTIMIZER in "${OPTIMIZER_LIST[@]}"; do
-for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
+for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
 
     CURRENT_RUN=$((CURRENT_RUN + 1))
     
@@ -736,6 +959,16 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
     MULTI_SCALE="${MULTI_SCALE_LIST[0]}"
     RECT="${RECT_LIST[0]}"
     
+    # Class focus parameters
+    CLASS_FOCUS_MODE="${CLASS_FOCUS_MODE_LIST[0]}"
+    CLASS_FOCUS_CLASSES="${CLASS_FOCUS_CLASSES_LIST[0]}"
+    CLASS_FOCUS_FOLD="${CLASS_FOCUS_FOLD_LIST[0]}"
+    CLASS_FOCUS_TARGET="${CLASS_FOCUS_TARGET_LIST[0]}"
+    
+    # Calculate class weights based on distribution file
+    DIST_FILE="${DATASET_PATH}/${CLASS_DISTRIBUTION_FILE}"
+    CLASS_WEIGHTS_JSON=$(calculate_class_weights "${DIST_FILE}" "${CLASS_FOCUS_MODE}" "${CLASS_FOCUS_CLASSES}" "${CLASS_FOCUS_FOLD}" "${CLASS_FOCUS_TARGET}")
+    
     # Check if model exists locally, otherwise will be downloaded
     if [ -f "${WEIGHTS_DIR}/${YOLO_MODEL}" ]; then
         YOLO_MODEL_PATH="${WEIGHTS_DIR}/${YOLO_MODEL}"
@@ -746,8 +979,8 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
     # Extract model name without extension for naming
     MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
     
-    # Grayscale indicator for display
-    if [ "$GRAYSCALE" = "grayscale" ]; then
+    # Color mode indicator for display
+    if [ "$COLOR_MODE" = "grayscale" ]; then
         GRAY_DISPLAY="gray"
     else
         GRAY_DISPLAY="rgb"
@@ -760,7 +993,7 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
     #===========================================================================
     if [ "$SKIP_EXISTING" = true ]; then
-        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$GRAYSCALE")
+        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE")
         if [ $? -eq 0 ]; then
             print_warning "Skipping ${RUN_ID} - already trained: $(basename "$existing_dir")"
             SKIPPED_RUNS+=("${RUN_ID}")
@@ -770,7 +1003,7 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
     
     # Generate experiment name with timestamp and parameters
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$GRAYSCALE" "$TIMESTAMP")
+    EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP")
     
     #===========================================================================
     # INITIALIZE LOGGING FOR THIS RUN
@@ -796,8 +1029,12 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
     echo "  - Image Size: ${IMG_SIZE}"
     echo "  - LR0:        ${LR0}"
     echo "  - Optimizer:  ${OPTIMIZER}"
-    echo "  - Grayscale:  ${GRAYSCALE}"
+    echo "  - Color Mode: ${COLOR_MODE}"
     echo "  - Output:     ${OUTPUT_DIR}/${EXP_NAME}"
+    echo ""
+    
+    # Display class focus configuration
+    display_class_focus_info "${CLASS_FOCUS_MODE}" "${CLASS_FOCUS_CLASSES}" "${CLASS_FOCUS_FOLD}" "${CLASS_FOCUS_TARGET}" "${CLASS_WEIGHTS_JSON}"
     echo ""
     
     # Run training using the modules/training/train.py script
@@ -834,7 +1071,7 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
         --mosaic ${MOSAIC} \
         --mixup ${MIXUP} \
         --copy-paste ${COPY_PASTE} \
-        --grayscale ${GRAYSCALE} \
+        --grayscale ${COLOR_MODE} \
         --pretrained ${PRETRAINED} \
         --resume ${RESUME} \
         --cache "${CACHE}" \
@@ -852,6 +1089,8 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
         --close-mosaic ${CLOSE_MOSAIC} \
         --multi-scale ${MULTI_SCALE} \
         --rect ${RECT} \
+        --class-focus-mode "${CLASS_FOCUS_MODE}" \
+        --class-weights "${CLASS_WEIGHTS_JSON}" \
         --log-dir "${EXPERIMENT_LOG_DIR:-}" 2>&1 | tee "${TRAINING_OUTPUT_FILE}"; then
         
         SUCCESSFUL_RUNS+=("${RUN_ID}")
@@ -916,7 +1155,7 @@ for GRAYSCALE in "${GRAYSCALE_LIST[@]}"; do
         sleep ${REST_TIME_PER_RUN}
     fi
 
-done  # GRAYSCALE
+done  # COLOR_MODE
 done  # OPTIMIZER
 done  # LR0
 done  # IMG_SIZE
