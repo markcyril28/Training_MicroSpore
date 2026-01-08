@@ -9,7 +9,7 @@
 #   Architecture: gfx90a (CDNA2)
 #   Driver: amdgpu
 #   Compute Platform: ROCm 6.x
-#   CPU Threads: 32
+#   CPU Threads: 64
 #===============================================================================
 
 : << 'SERVER_SPECS'
