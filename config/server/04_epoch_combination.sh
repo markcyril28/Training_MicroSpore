@@ -91,20 +91,21 @@ EPOCHS_LIST=(
     # 100                   # standard training
     # 150                   # optimal training (early stopping will trigger if converged)
     #200                     # long training (MI210 can handle extended training)
-    # 300                   # maximum training
+    320                   # maximum training
 )
 
 PATIENCE_LIST=(
     # 50                    # standard patience
     # 25                    # quick stopping
     #150                     # balanced patience (optimal for convergence detection)
+    300
 )
 
 BATCH_SIZE_LIST=(
     # 8                     # low (for debugging)
-    # 16                    # moderate
+    16                    # moderate
     #32                    # standard for high-end GPUs
-    64                      # optimal for MI210 64GB HBM2e (maximum throughput)
+    #64                      # optimal for MI210 64GB HBM2e (maximum throughput)
     # 128                   # very high batch size (may need gradient accumulation)
 )
 
@@ -112,9 +113,9 @@ IMG_SIZE_LIST=(
     # 320                   # fast, low resolution
     # 512                   # medium resolution
     # 608                   # from microspores.cfg (width/height=608)
-    640                   # standard resolution
+    #640                   # standard resolution
     # 800                   # high resolution
-    #1024                    # very high resolution (optimal for MI210 64GB VRAM)
+    1024                    # very high resolution (optimal for MI210 64GB VRAM)
     # 1280                  # maximum (for detecting very small objects)
 )
 
@@ -173,7 +174,7 @@ OPTIMIZER_LIST=(
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
-    "RGB"                   # RGB color images (default)
+    #"RGB"                   # RGB color images (default)
     # "grayscale"           # grayscale images
 )
 
