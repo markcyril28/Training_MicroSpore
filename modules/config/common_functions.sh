@@ -229,6 +229,7 @@ is_wsl() {
 # Centralized model lists used across scripts
 
 # All model arrays
+YOLOV4_MODELS=("yolov4.pt" "yolov4-tiny.pt" "yolov4s-mish.pt" "yolov4-csp.pt" "yolov4x-mish.pt")
 YOLOV5_MODELS=("yolov5nu.pt" "yolov5su.pt" "yolov5mu.pt" "yolov5lu.pt" "yolov5xu.pt")
 YOLOV8_MODELS=("yolov8n.pt" "yolov8s.pt" "yolov8m.pt" "yolov8l.pt" "yolov8x.pt")
 YOLOV9_MODELS=("yolov9t.pt" "yolov9s.pt" "yolov9m.pt" "yolov9c.pt" "yolov9e.pt")
@@ -238,6 +239,7 @@ YOLO11_MODELS=("yolo11n.pt" "yolo11s.pt" "yolo11m.pt" "yolo11l.pt" "yolo11x.pt")
 # Get all models as single array
 get_all_yolo_models() {
     local all_models=()
+    all_models+=("${YOLOV4_MODELS[@]}")
     all_models+=("${YOLOV5_MODELS[@]}")
     all_models+=("${YOLOV8_MODELS[@]}")
     all_models+=("${YOLOV9_MODELS[@]}")
