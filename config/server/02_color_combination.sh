@@ -102,9 +102,9 @@ PATIENCE_LIST=(
 
 BATCH_SIZE_LIST=(
     # 8                     # low (for debugging)
-    # 16                    # moderate
-    #32                    # standard for high-end GPUs
-    64                      # optimal for MI210 64GB HBM2e (maximum throughput)
+    16                      # safe for yolov8x/yolo11x with img 800-1024
+    #32                    # standard for high-end GPUs (use with img 640 or smaller models)
+    #64                    # optimal for smaller models (yolov8s/m) or lower resolution
     # 128                   # very high batch size (may need gradient accumulation)
 )
 

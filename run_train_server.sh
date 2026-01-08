@@ -64,6 +64,7 @@ export HIP_PATH="${ROCM_PATH}"
 export HSA_OVERRIDE_GFX_VERSION=9.0.10  # For gfx90a (MI210)
 export HIP_VISIBLE_DEVICES=0             # Single GPU training
 export MIOPEN_LOG_LEVEL=1                # Reduce MIOpen warnings
+export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True  # Reduce memory fragmentation
 
 #===============================================================================
 # CONFIG SCRIPTS SELECTION
