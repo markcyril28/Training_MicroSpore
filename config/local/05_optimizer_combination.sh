@@ -108,10 +108,11 @@ BATCH_SIZE_LIST=(
 )
 
 IMG_SIZE_LIST=(
-    320                     # fast, low resolution (OPTIMAL for local testing)
+    #320                     # fast, low resolution (OPTIMAL for local testing)
     # 416                   # balanced speed/accuracy
     # 512                   # medium resolution
-    640                   # standard resolution (may need batch 4 on 8GB)
+    #640                   # standard resolution (may need batch 4 on 8GB)
+    1280
 )
 
 WORKERS_LIST=(
@@ -173,7 +174,9 @@ COLOR_MODE_LIST=(
 
 # Class Focus Configuration (Address Class Imbalance)
 # ─────────────────────────────────────────────────────────────────────────────
-# Focus training on specific underrepresented classes by oversampling them.
+# FULLY IMPLEMENTED: This feature creates a balanced dataset by oversampling
+# images containing underrepresented classes. Uses symbolic links for efficiency.
+#
 # Distribution from Dataset_2_OPTIMIZATION (Train counts):
 #   midlate_pollen: 2740, young_microspore: 2128, late_microspore: 1540
 #   mid_microspore: 1452, others: 1229, Blank: 1228, young_pollen: 1110
@@ -185,6 +188,12 @@ COLOR_MODE_LIST=(
 #   "auto"      - Auto-balance based on distribution.txt (target: equal representation)
 #   "sqrt"      - Square root balancing (softer than full equalization)
 #
+# HOW IT WORKS:
+#   1. Reads class weights calculated from distribution.txt
+#   2. Creates a temporary balanced dataset with oversampled images (via symlinks)
+#   3. Trains YOLO on the balanced dataset
+#   4. Cleans up temporary files after training
+#
 # CLASS_FOCUS_CLASSES: Classes to focus on (used in "manual" mode)
 #   Specify class names from: tetrad, young_microspore, mid_microspore,
 #   late_microspore, young_pollen, midlate_pollen, mature_pollen, others, Blank
@@ -194,12 +203,17 @@ COLOR_MODE_LIST=(
 #   In "auto"/"sqrt" mode: Maximum fold to apply (caps the multiplier)
 #
 # Example: To oversample tetrad (801) to match midlate_pollen (2740), use fold ~3.4
+# With auto mode + median target + fold 2.0:
+#   - tetrad (801) → ~1,602 images (2.0x, capped at max_fold)
+#   - mature_pollen (905) → ~1,536 images (1.7x)
+#   - young_pollen (1110) → ~1,332 images (1.2x)
+#   - Classes above median → unchanged (1.0x)
 
 CLASS_FOCUS_MODE_LIST=(
     "none"                  # No class focus (OPTIMAL for local quick tests)
-    # "auto"                # Auto-equalize all classes
-    # "sqrt"                # Square root balancing (recommended for mild imbalance)
-    # "manual"              # Manual class selection with specified fold
+    "auto"                # Auto-equalize all classes (recommended for production)
+    "sqrt"                # Square root balancing (gentler, good for mild imbalance)
+    "manual"              # Manual class selection with specified fold
 )
 
 # Classes to focus on in "manual" mode (comma-separated, no spaces)

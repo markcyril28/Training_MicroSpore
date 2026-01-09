@@ -11,39 +11,39 @@
 # With 64GB VRAM, you can comfortably train the largest models!
 YOLO_MODELS=(
     # YOLOv5 variants - Ultralytics versions with 'u' suffix
-    # "yolov5nu.pt"   # nano     - fastest, lowest accuracy
+    #"yolov5nu.pt"   # nano     - fastest, lowest accuracy (OPTIMAL for local 8GB)
     # "yolov5su.pt"   # small    - fast, good accuracy
     # "yolov5mu.pt"   # medium   - balanced
     # "yolov5lu.pt"   # large    - slower, better accuracy
-    "yolov5xu.pt"     # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    # "yolov5xu.pt"   # xlarge   - slowest, best accuracy (needs >16GB VRAM)
     
     # YOLOv8 variants - Recommended
-    # "yolov8n.pt"    # nano     - fastest, lowest accuracy
-    # "yolov8s.pt"    # small    - fast, good accuracy
-    # "yolov8m.pt"    # medium   - balanced
+    "yolov8n.pt"    # nano     - fastest, lowest accuracy
+    # "yolov8s.pt"    # small    - fast, good accuracy (max for 8GB VRAM)
+    # "yolov8m.pt"    # medium   - balanced (needs >12GB VRAM)
     # "yolov8l.pt"    # large    - slower, better accuracy
-    "yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    # "yolov8x.pt"    # xlarge   - slowest, best accuracy (needs >16GB VRAM)
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
     # "yolov9s.pt"    # small    - fast, lightweight
     # "yolov9m.pt"    # medium   - balanced
     # "yolov9c.pt"    # compact  - efficient accuracy
-    "yolov9e.pt"      # extended - best accuracy (OPTIMAL for MI210)
+    # "yolov9e.pt"    # extended - best accuracy (needs >16GB VRAM)
     
     # YOLOv10 variants
     # "yolov10n.pt"   # nano     - fastest
     # "yolov10s.pt"   # small    - fast
     # "yolov10m.pt"   # medium   - balanced
     # "yolov10l.pt"   # large    - slower
-    "yolov10x.pt"     # xlarge   - best accuracy (OPTIMAL for MI210)
+    # "yolov10x.pt"   # xlarge   - best accuracy (needs >16GB VRAM)
     
     # YOLO11 variants - Latest (note: named 'yolo11' not 'yolov11')
-    # "yolo11n.pt"    # nano     - fastest
+    # "yolo11n.pt"    # nano     - fastest (good for local)
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
     # "yolo11l.pt"    # large    - slower
-    "yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
+    # "yolo11x.pt"    # xlarge   - best accuracy (needs >16GB VRAM)
 )
 
 # Select first model from the array (for quick reference)
@@ -87,43 +87,38 @@ DEFAULT_DATASET="${DATASET_LIST[0]}"
 # PATIENCE:   ↑ waits longer before stopping            | ↓ stops earlier, saves time
 # WORKERS:    ↑ faster data loading (match CPU cores)   | ↓ less CPU usage
 EPOCHS_LIST=(
-    # 10                    # quick test
+    3                      # quick test (OPTIMAL for local testing)
+    # 50                    # short training
     # 100                   # standard training
     # 150                   # optimal training (early stopping will trigger if converged)
-    200                     # long training (MI210 can handle extended training)
-    # 300                   # maximum training
+    # 200                   # long training (use on workstation/server)
 )
 
 PATIENCE_LIST=(
+    5                      # quick stopping (OPTIMAL for local - faster iteration)
     # 50                    # standard patience
-    # 25                    # quick stopping
-    150                     # balanced patience (optimal for convergence detection)
+    # 100                   # balanced patience
 )
 
 BATCH_SIZE_LIST=(
-    # 8                     # low (for debugging)
-    # 16                    # moderate
-    #32                    # standard for high-end GPUs
-    64                      # optimal for MI210 64GB HBM2e (maximum throughput)
-    # 128                   # very high batch size (may need gradient accumulation)
+    #4                     # very low (use if OOM with batch 8)
+    8                       # OPTIMAL for local 8GB VRAM (nano models)
+    #16                    # moderate (only with nano models + small img size)
+    # 32                    # high-end GPUs only (>16GB VRAM)
 )
 
 IMG_SIZE_LIST=(
-    # 320                   # fast, low resolution
+    320                     # fast, low resolution (OPTIMAL for local testing)
+    # 416                   # balanced speed/accuracy
     # 512                   # medium resolution
-    # 608                   # from microspores.cfg (width/height=608)
-    640                   # standard resolution
-    # 800                   # high resolution
-    #1024                    # very high resolution (optimal for MI210 64GB VRAM)
-    # 1280                  # maximum (for detecting very small objects)
+    #640                   # standard resolution (may need batch 4 on 8GB)
+    #1280
 )
 
 WORKERS_LIST=(
-    # 2                     # low CPU
-    # 4                     # standard
-    # 8                     # moderate (balanced for data loading)
-    16                      # server with 32 threads (optimal: ~half of available threads)
-    # 32                    # maximum (use all threads - may cause contention)
+    # 2                     # low CPU (if system becomes unresponsive)
+    #4                       # OPTIMAL for local (typical laptop cores)
+    8                     # higher (if you have 8+ cores)
 )
 
 # Learning Rate & Optimizer
@@ -159,26 +154,29 @@ WEIGHT_DECAY_LIST=(
 )
 
 OPTIMIZER_LIST=(
-    "auto"                  # auto-select (recommended)
+    "auto"                  # auto-select (RECOMMENDED for local)
     # "SGD"                 # Stochastic Gradient Descent
     # "Adam"                # Adam optimizer
-    # "AdamW"               # Adam with weight decay
+    # "AdamW"               # Adam with weight decay (good alternative)
     # "NAdam"               # Nesterov Adam
     # "RAdam"               # Rectified Adam
 )
 
+# Grayscale Configuration
 # Color Mode Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
     "RGB"                   # RGB color images (default)
-    "grayscale"             # grayscale images
+    # "grayscale"           # grayscale images
 )
 
 # Class Focus Configuration (Address Class Imbalance)
 # ─────────────────────────────────────────────────────────────────────────────
-# Focus training on specific underrepresented classes by oversampling them.
+# FULLY IMPLEMENTED: This feature creates a balanced dataset by oversampling
+# images containing underrepresented classes. Uses symbolic links for efficiency.
+#
 # Distribution from Dataset_2_OPTIMIZATION (Train counts):
 #   midlate_pollen: 2740, young_microspore: 2128, late_microspore: 1540
 #   mid_microspore: 1452, others: 1229, Blank: 1228, young_pollen: 1110
@@ -190,6 +188,12 @@ COLOR_MODE_LIST=(
 #   "auto"      - Auto-balance based on distribution.txt (target: equal representation)
 #   "sqrt"      - Square root balancing (softer than full equalization)
 #
+# HOW IT WORKS:
+#   1. Reads class weights calculated from distribution.txt
+#   2. Creates a temporary balanced dataset with oversampled images (via symlinks)
+#   3. Trains YOLO on the balanced dataset
+#   4. Cleans up temporary files after training
+#
 # CLASS_FOCUS_CLASSES: Classes to focus on (used in "manual" mode)
 #   Specify class names from: tetrad, young_microspore, mid_microspore,
 #   late_microspore, young_pollen, midlate_pollen, mature_pollen, others, Blank
@@ -199,9 +203,14 @@ COLOR_MODE_LIST=(
 #   In "auto"/"sqrt" mode: Maximum fold to apply (caps the multiplier)
 #
 # Example: To oversample tetrad (801) to match midlate_pollen (2740), use fold ~3.4
+# With auto mode + median target + fold 2.0:
+#   - tetrad (801) → ~1,602 images (2.0x, capped at max_fold)
+#   - mature_pollen (905) → ~1,536 images (1.7x)
+#   - young_pollen (1110) → ~1,332 images (1.2x)
+#   - Classes above median → unchanged (1.0x)
 
 CLASS_FOCUS_MODE_LIST=(
-    "none"                  # No class focus (original distribution)
+    "none"                  # No class focus (OPTIMAL for local quick tests)
     "auto"                # Auto-equalize all classes (recommended for production)
     "sqrt"                # Square root balancing (gentler, good for mild imbalance)
     "manual"              # Manual class selection with specified fold
@@ -233,8 +242,8 @@ CLASS_FOCUS_FOLD_LIST=(
 # "mean" = balance towards mean class count
 CLASS_FOCUS_TARGET_LIST=(
     "median"                # Balance towards median (recommended)
-    # "max"                 # Balance towards largest class
-    # "mean"                # Balance towards mean count
+    "max"                 # Balance towards largest class
+    "mean"                # Balance towards mean count
 )
 
 # Distribution file path (relative to dataset directory)
@@ -400,8 +409,8 @@ CLOSE_MOSAIC_LIST=(
 # MULTI_SCALE: Train with varying image sizes (+/- 50%)
 # RECT:        Rectangular training (non-square images, faster)
 MULTI_SCALE_LIST=(
-    #false                   # fixed image size
-    true                  # multi-scale training (MI210 can handle this well)
+    false                   # fixed image size (OPTIMAL for local - faster, less VRAM)
+    # true                  # multi-scale training (use on high-end GPUs)
 )
 
 RECT_LIST=(
@@ -423,9 +432,9 @@ PRETRAINED_LIST=(
 RESUME=false                # Resume training from last checkpoint
 
 CACHE_LIST=(
-    # "disk"                # disk cache (use if RAM limited)
-    "ram"                   # RAM cache (fastest - server likely has plenty of RAM)
-    # false                 # no cache (slowest)
+    #"disk"                  # disk cache (OPTIMAL for local - saves RAM)
+    "ram"                 # RAM cache (use only if you have 32GB+ RAM)
+    # false                 # no cache (slowest - use if SSD space limited)
 )
 
 AMP_LIST=(
