@@ -87,7 +87,7 @@ DEFAULT_DATASET="${DATASET_LIST[0]}"
 # PATIENCE:   ↑ waits longer before stopping            | ↓ stops earlier, saves time
 # WORKERS:    ↑ faster data loading (match CPU cores)   | ↓ less CPU usage
 EPOCHS_LIST=(
-    5                      # quick test (OPTIMAL for local testing)
+    3                      # quick test (OPTIMAL for local testing)
     # 50                    # short training
     # 100                   # standard training
     # 150                   # optimal training (early stopping will trigger if converged)
@@ -101,8 +101,8 @@ PATIENCE_LIST=(
 )
 
 BATCH_SIZE_LIST=(
-    8                       # OPTIMAL for local 8GB VRAM (nano models)
-    # 4                     # very low (use if OOM with batch 8)
+    #8                       # OPTIMAL for local 8GB VRAM (nano models)
+    4                     # very low (use if OOM with batch 8)
     # 16                    # moderate (only with nano models + small img size)
     # 32                    # high-end GPUs only (>16GB VRAM)
 )
@@ -111,7 +111,7 @@ IMG_SIZE_LIST=(
     320                     # fast, low resolution (OPTIMAL for local testing)
     # 416                   # balanced speed/accuracy
     # 512                   # medium resolution
-    # 640                   # standard resolution (may need batch 4 on 8GB)
+    640                   # standard resolution (may need batch 4 on 8GB)
 )
 
 WORKERS_LIST=(
@@ -418,8 +418,8 @@ PRETRAINED_LIST=(
 RESUME=false                # Resume training from last checkpoint
 
 CACHE_LIST=(
-    "disk"                  # disk cache (OPTIMAL for local - saves RAM)
-    # "ram"                 # RAM cache (use only if you have 32GB+ RAM)
+    #"disk"                  # disk cache (OPTIMAL for local - saves RAM)
+    "ram"                 # RAM cache (use only if you have 32GB+ RAM)
     # false                 # no cache (slowest - use if SSD space limited)
 )
 

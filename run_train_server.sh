@@ -584,15 +584,24 @@ check_training_exists() {
     if [ "$color_mode" = "grayscale" ]; then
         gray_str="gray"
     fi
-    local pattern="${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_*"
     
-    # Look for matching directories with completed training (best.pt exists)
-    for dir in "${OUTPUT_DIR}"/${pattern}; do
-        if [ -d "$dir" ] && [ -f "${dir}/weights/best.pt" ]; then
-            echo "$dir"
-            return 0
-        fi
-    done
+    # Build pattern to match: {dataset}_{model}_e{epochs}_b{batch}_img{size}_lr{lr0}_{optimizer}_{color}_*
+    local pattern="${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_"
+    
+    # Look for matching directories with completed training
+    # Use find for more reliable file detection (works better in WSL/cross-platform)
+    if [ -d "${OUTPUT_DIR}" ]; then
+        while IFS= read -r dir; do
+            # Check if this directory has a completed best.pt weight file
+            if [ -d "${dir}/weights" ]; then
+                # Use find to check for *_best.pt files (more reliable than ls glob)
+                if find "${dir}/weights" -maxdepth 1 -name "*_best.pt" -type f 2>/dev/null | grep -q .; then
+                    echo "$dir"
+                    return 0
+                fi
+            fi
+        done < <(find "${OUTPUT_DIR}" -maxdepth 1 -type d -name "${pattern}*" 2>/dev/null)
+    fi
     return 1
 }
 
@@ -691,15 +700,19 @@ for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
         GRAY_DISPLAY="rgb"
     fi
     
-    # Create run identifier for tracking (includes dataset name)
-    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_e${EPOCHS}_b${BATCH_SIZE}_img${IMG_SIZE}_lr${LR0}_${OPTIMIZER}_${GRAY_DISPLAY}"
+    # Format LR0 for run identifier (match folder naming: replace dots with underscores)
+    LR0_DISPLAY=$(echo "${LR0}" | sed 's/\./_/g')
+    
+    # Create run identifier for tracking (includes dataset name, matches folder pattern)
+    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_e${EPOCHS}_b${BATCH_SIZE}_img${IMG_SIZE}_lr${LR0_DISPLAY}_${OPTIMIZER}_${GRAY_DISPLAY}"
     
     #===========================================================================
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
     #===========================================================================
     if [ "$SKIP_EXISTING" = true ]; then
-        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE")
-        if [ $? -eq 0 ]; then
+        # Use || true to prevent set -e from exiting when no match found (returns 1)
+        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE") || true
+        if [ -n "$existing_dir" ]; then
             print_warning "Skipping ${RUN_ID} - already trained: $(basename "$existing_dir")"
             SKIPPED_RUNS+=("${RUN_ID}")
             continue
