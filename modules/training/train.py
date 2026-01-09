@@ -33,6 +33,9 @@ try:
 except ImportError:
     LOGGING_AVAILABLE = False
 
+# Import class balancer for addressing class imbalance
+from .class_balancer import create_balanced_training_data, cleanup_balanced_dataset, generate_balancing_report
+
 
 # =============================================================================
 # EXPORT UTILITIES
@@ -1421,7 +1424,11 @@ def run_training(
     if grayscale:
         print("[Training] Grayscale mode enabled - HSV saturation set to 0")
     
-    # Log class focus mode
+    # Log class focus mode and create balanced dataset if enabled
+    balanced_data_yaml = data_yaml
+    balanced_dataset_dir = None
+    balancing_stats = {"mode": "none", "original": True}
+    
     if class_focus_mode != "none":
         print(f"[Training] Class focus mode: {class_focus_mode}")
         try:
@@ -1431,15 +1438,34 @@ def run_training(
                 for cls_name, weight in sorted(weights_dict.items(), key=lambda x: -x[1]):
                     boost_status = "(boosted)" if weight > 1.0 else ""
                     print(f"    {cls_name}: {weight:.2f}x {boost_status}")
-                print("[Training] Note: Class weights are logged for reference.")
-                print("           Future versions may implement oversampling based on these weights.")
-        except (json.JSONDecodeError, TypeError):
-            print(f"[Training] Class weights: {class_weights}")
+                
+                # Create balanced dataset with oversampling
+                print("[Training] Creating balanced dataset with oversampling...")
+                balanced_data_yaml, balancing_stats = create_balanced_training_data(
+                    data_yaml=data_yaml,
+                    class_weights_json=class_weights,
+                    mode=class_focus_mode,
+                    output_dir=None,  # Use temp directory
+                    use_symlinks=True,  # Use symlinks for efficiency
+                )
+                
+                if not balancing_stats.get("original", False):
+                    # Track the balanced directory for cleanup
+                    from pathlib import Path as PathLib
+                    balanced_dataset_dir = str(PathLib(balanced_data_yaml).parent)
+                    print(f"[Training] Using balanced dataset: {balanced_data_yaml}")
+                    print(f"[Training] Original images: {balancing_stats.get('original_count', 'N/A')}")
+                    print(f"[Training] Balanced images: {balancing_stats.get('balanced_count', 'N/A')}")
+                else:
+                    print("[Training] Using original dataset (no oversampling needed)")
+        except (json.JSONDecodeError, TypeError) as e:
+            print(f"[Training] Warning: Could not parse class weights: {e}")
+            print(f"[Training] Using original dataset")
     
     # Train the model
     results = model.train(
-        # Data
-        data=data_yaml,
+        # Data - use balanced dataset if class balancing is active
+        data=balanced_data_yaml,
         
         # Core parameters
         epochs=epochs,
@@ -1512,6 +1538,29 @@ def run_training(
     print()
     print(f'Results saved to: {project_dir}/{exp_name}')
     print()
+    
+    # Print class balancing summary
+    if not balancing_stats.get("original", True):
+        print('[Class Balancing] Summary:')
+        print(f'    Mode: {balancing_stats.get("mode", "N/A")}')
+        print(f'    Original images: {balancing_stats.get("original_count", "N/A")}')
+        print(f'    Balanced images: {balancing_stats.get("balanced_count", "N/A")}')
+        if balancing_stats.get("duplications"):
+            print('    Duplications by class:')
+            for cls_name, count in sorted(balancing_stats["duplications"].items(), key=lambda x: -x[1]):
+                print(f'        {cls_name}: {count}')
+        
+        # Save balancing report to the experiment output directory
+        experiment_output = Path(project_dir) / exp_name
+        generate_balancing_report(
+            stats=balancing_stats,
+            output_dir=str(experiment_output / "stats"),
+        )
+    
+    # Cleanup balanced dataset temporary directory
+    if balanced_dataset_dir:
+        print(f'[Training] Cleaning up temporary balanced dataset...')
+        cleanup_balanced_dataset(balanced_dataset_dir)
     
     # Print logger summary if available
     if logger:

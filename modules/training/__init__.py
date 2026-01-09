@@ -2,13 +2,15 @@
 Core training components, trainer classes, and statistics.
 
 Files:
-    core.py     - YOLOTrainer class for model training
-    train.py    - Training runner and CLI interface
-    stats.py    - Statistics, metrics, and reporting
+    core.py           - YOLOTrainer class for model training
+    train.py          - Training runner and CLI interface
+    stats.py          - Statistics, metrics, and reporting
+    class_balancer.py - Class imbalance handling via oversampling
 """
 
 from .core import YOLOTrainer, YOLO_AVAILABLE
 from .stats import TrainingStats, generate_training_report
+from .class_balancer import ClassBalancer, create_balanced_training_data, cleanup_balanced_dataset, generate_balancing_report
 
 # Lazy import for train.py to avoid circular import warning when running as __main__
 def __getattr__(name):
@@ -25,6 +27,11 @@ __all__ = [
     # Statistics
     'TrainingStats',
     'generate_training_report',
+    # Class balancing
+    'ClassBalancer',
+    'create_balanced_training_data',
+    'cleanup_balanced_dataset',
+    'generate_balancing_report',
     # Training runner (lazy loaded)
     'run_training',
     'generate_stats',
