@@ -92,16 +92,24 @@ RESUME=false
 CLASS_DISTRIBUTION_FILE="Distribution/distribution.txt"
 
 #===============================================================================
+# ENVIRONMENT TYPE
+#===============================================================================
+# Identifies which environment this script runs on for output organization
+# Used to organize outputs into: trained_models_output/workstation/<config_type>/
+ENVIRONMENT_TYPE="workstation"
+
+#===============================================================================
 # PATHS (Using common configuration - DRY principle)
 #===============================================================================
 
 # Base paths (dataset-independent)
 WEIGHTS_DIR="${SCRIPT_DIR}/${COMMON_WEIGHTS_SUBDIR}"
-OUTPUT_DIR="${SCRIPT_DIR}/${COMMON_TRAINED_MODELS_SUBDIR}"
+# Base output directory - will be further organized by environment and config type
+OUTPUT_BASE_DIR="${SCRIPT_DIR}/${COMMON_TRAINED_MODELS_SUBDIR}"
 
 # Create directories using common function
 ensure_dir "${WEIGHTS_DIR}"
-ensure_dir "${OUTPUT_DIR}"
+ensure_dir "${OUTPUT_BASE_DIR}"
 
 # Note: DATA_YAML, YOLO_MODEL_PATH, MODEL_NAME, and EXP_NAME are now set 
 # dynamically within the training loop to support multiple datasets
@@ -182,16 +190,17 @@ echo ""
 # OUTPUT MANAGEMENT - Clear or Keep Old Trained Models
 #===============================================================================
 
-OUTPUT_DIR="${SCRIPT_DIR}/trained_models_output"
+# Note: OUTPUT_BASE_DIR is already set above, used for clearing
+# Actual OUTPUT_DIR will be set per-config inside the training loop
 
 if [ "$CLEAR_OUTPUT_ON_START" = true ]; then
-    if [ -d "${OUTPUT_DIR}" ] && [ "$(ls -A ${OUTPUT_DIR} 2>/dev/null)" ]; then
+    if [ -d "${OUTPUT_BASE_DIR}" ] && [ "$(ls -A ${OUTPUT_BASE_DIR} 2>/dev/null)" ]; then
         # Count existing output directories
-        OUTPUT_COUNT=$(find "${OUTPUT_DIR}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+        OUTPUT_COUNT=$(find "${OUTPUT_BASE_DIR}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
         
         if [ "$OUTPUT_COUNT" -gt 0 ]; then
             print_warning "CLEAR_OUTPUT_ON_START is enabled. Clearing ${OUTPUT_COUNT} existing trained model(s)..."
-            rm -rf "${OUTPUT_DIR:?}"/*
+            rm -rf "${OUTPUT_BASE_DIR:?}"/*
             print_success "Old trained models cleared successfully."
         fi
     else
@@ -385,7 +394,16 @@ for CURRENT_CONFIG in "${VALID_CONFIGS[@]}"; do
     CONFIG_INDEX=$((CONFIG_INDEX + 1))
     CONFIG_PATH="${CONFIG_DIR}/${CURRENT_CONFIG}"
     
+    # Extract config combination name for output organization
+    # e.g., "05_optimizer_combination.sh" -> "05_optimizer_combination"
+    CONFIG_COMBINATION_NAME=$(get_config_combination_name "${CURRENT_CONFIG}")
+    
+    # Set OUTPUT_DIR for this config: trained_models_output/workstation/05_optimizer_combination/
+    OUTPUT_DIR="${OUTPUT_BASE_DIR}/${ENVIRONMENT_TYPE}/${CONFIG_COMBINATION_NAME}"
+    ensure_dir "${OUTPUT_DIR}"
+    
     print_header "Config ${CONFIG_INDEX}/${#VALID_CONFIGS[@]}: ${CURRENT_CONFIG}"
+    print_info "Output directory: ${OUTPUT_DIR}"
     
     # Source the config script to load all parameter arrays
     print_info "Loading config: ${CONFIG_PATH}"
@@ -672,8 +690,13 @@ for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
     echo ""
     
     # Run training using the modules/training/train.py script
-    # Capture both stdout and stderr for comprehensive error logging
-    TRAINING_OUTPUT_FILE=$(mktemp)
+    # Capture both stdout and stderr for comprehensive logging
+    # Use the logging module's training output file if available, otherwise use temp file
+    if [ "$LOGGING_ENABLED" = true ] && [ -n "${CURRENT_TRAINING_OUTPUT:-}" ]; then
+        TRAINING_OUTPUT_FILE="${CURRENT_TRAINING_OUTPUT}"
+    else
+        TRAINING_OUTPUT_FILE=$(mktemp)
+    fi
     
     if python -m modules.training.train \
         --data-yaml "${DATA_YAML}" \
@@ -765,11 +788,14 @@ for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
         fi
     fi
     
-    # Clean up temp file
-    rm -f "${TRAINING_OUTPUT_FILE}"
+    # Clean up temp file only if not using the logging module's file
+    if [ "$LOGGING_ENABLED" != true ] || [ -z "${CURRENT_TRAINING_OUTPUT:-}" ]; then
+        rm -f "${TRAINING_OUTPUT_FILE}"
+    fi
     
-    # Stop monitors for this run and generate summary
+    # Append training output to the main full log, then stop monitors
     if [ "$LOGGING_ENABLED" = true ]; then
+        append_training_output_to_full_log
         stop_all_monitors
         generate_log_summary
     fi
@@ -823,7 +849,8 @@ print_header "Training Complete - Final Summary (All Configs)"
 
 echo "Total configs processed: ${#VALID_CONFIGS[@]}"
 for config in "${VALID_CONFIGS[@]}"; do
-    echo "  - ${config}"
+    config_name=$(get_config_combination_name "${config}")
+    echo "  - ${config} -> ${ENVIRONMENT_TYPE}/${config_name}/"
 done
 echo ""
 
@@ -851,8 +878,9 @@ if [ ${#GLOBAL_FAILED_RUNS[@]} -gt 0 ]; then
     echo ""
 fi
 
-print_info "All trained models saved to: ${OUTPUT_DIR}"
+print_info "Output directory structure: ${OUTPUT_BASE_DIR}/${ENVIRONMENT_TYPE}/<config_type>/"
 print_info "Copies also saved to each dataset's 'logs/' and 'trained_models_output/' folders"
+print_info "Logs included in each training output folder"
 echo ""
 print_info "To compare models, check the training_stats.json in each experiment folder."
 echo ""
