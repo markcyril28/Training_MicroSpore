@@ -77,6 +77,10 @@ init_logging_dirs() {
     # Initialize error log
     touch "$CURRENT_ERROR_LOG"
     
+    # Set the training output log file (for capturing full stdout/stderr from training)
+    CURRENT_TRAINING_OUTPUT="${EXPERIMENT_LOG_DIR}/full_logs/training_output_${timestamp}.log"
+    touch "$CURRENT_TRAINING_OUTPUT"
+    
     # Log initialization
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Logging initialized for experiment: ${experiment_name}" >> "$CURRENT_FULL_LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Log directory: ${EXPERIMENT_LOG_DIR}" >> "$CURRENT_FULL_LOG"
@@ -141,6 +145,23 @@ start_full_logging() {
     fi
     exec > >(tee -a "$CURRENT_FULL_LOG") 2>&1
     log_info "Full logging started"
+}
+
+# Append training output to the main full log file
+# This ensures all terminal output is consolidated in one file
+append_training_output_to_full_log() {
+    if ! _check_logging_init; then
+        return 1
+    fi
+    
+    if [ -f "${CURRENT_TRAINING_OUTPUT}" ] && [ -s "${CURRENT_TRAINING_OUTPUT}" ]; then
+        echo "" >> "$CURRENT_FULL_LOG"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] === BEGIN TRAINING OUTPUT ===" >> "$CURRENT_FULL_LOG"
+        cat "${CURRENT_TRAINING_OUTPUT}" >> "$CURRENT_FULL_LOG"
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] === END TRAINING OUTPUT ===" >> "$CURRENT_FULL_LOG"
+        echo "" >> "$CURRENT_FULL_LOG"
+        log_info "Training output appended to full log"
+    fi
 }
 
 #===============================================================================
@@ -501,10 +522,13 @@ trap_logging_cleanup() {
 
 export -f init_logging_dirs _check_logging_init
 export -f log_message log_info log_warning log_error
-export -f start_full_logging
+export -f start_full_logging append_training_output_to_full_log
 export -f start_gpu_monitor stop_gpu_monitor get_gpu_stats
 export -f start_system_monitor stop_system_monitor get_system_stats
 export -f log_oom_event log_interruption log_training_warning
 export -f save_metrics_snapshot log_best_checkpoint
 export -f log_prediction_sample
 export -f stop_all_monitors generate_log_summary cleanup_logging trap_logging_cleanup
+
+# Export global variables for training output logging
+export CURRENT_TRAINING_OUTPUT

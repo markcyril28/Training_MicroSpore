@@ -294,6 +294,20 @@ require_dir() {
 }
 
 #===============================================================================
+# CONFIG NAME UTILITIES
+#===============================================================================
+# Helper functions for extracting config combination names
+
+# Extract config combination name from config script filename
+# e.g., "01_yolo_color_combination.sh" -> "01_yolo_color_combination"
+# Usage: get_config_combination_name "config_script_filename"
+get_config_combination_name() {
+    local config_file="$1"
+    # Remove .sh extension
+    echo "${config_file%.sh}"
+}
+
+#===============================================================================
 # DATASET OUTPUT COPY UTILITIES
 #===============================================================================
 # Functions to copy logs and trained models to dataset-specific directories
@@ -351,6 +365,39 @@ copy_model_to_dataset() {
     return 0
 }
 
+# Copy logs into the training output folder
+# Usage: copy_logs_to_output "experiment_log_dir" "output_dir" "exp_name"
+copy_logs_to_output() {
+    local experiment_log_dir="$1"
+    local output_dir="$2"
+    local exp_name="$3"
+    
+    if [ -z "$experiment_log_dir" ] || [ ! -d "$experiment_log_dir" ]; then
+        print_warning "No experiment log directory to copy to output"
+        return 1
+    fi
+    
+    local target_output_dir="${output_dir}/${exp_name}"
+    if [ ! -d "$target_output_dir" ]; then
+        print_warning "Target output directory not found: $target_output_dir"
+        return 1
+    fi
+    
+    # Create logs subdirectory in the training output folder
+    local target_logs_dir="${target_output_dir}/logs"
+    ensure_dir "$target_logs_dir"
+    
+    # Copy all log files to the logs subdirectory
+    if [ -d "$experiment_log_dir" ]; then
+        cp -r "${experiment_log_dir}"/* "$target_logs_dir/" 2>/dev/null || true
+        print_success "Logs copied to output folder: ${target_logs_dir}"
+        return 0
+    else
+        print_warning "Source log directory not found: $experiment_log_dir"
+        return 1
+    fi
+}
+
 # Copy both logs and trained model to dataset folder
 # Usage: copy_outputs_to_dataset "experiment_log_dir" "output_dir" "exp_name" "dataset_path"
 copy_outputs_to_dataset() {
@@ -361,11 +408,14 @@ copy_outputs_to_dataset() {
     
     print_subheader "Copying outputs to dataset folder"
     
-    # Copy logs
+    # Copy logs to dataset-specific logs folder
     copy_logs_to_dataset "$experiment_log_dir" "$dataset_path" "$exp_name"
     
-    # Copy trained model
+    # Copy trained model to dataset-specific trained_models_output folder
     copy_model_to_dataset "$output_dir" "$exp_name" "$dataset_path"
+    
+    # Also copy logs into the training output folder itself
+    copy_logs_to_output "$experiment_log_dir" "$output_dir" "$exp_name"
     
     echo ""
 }
