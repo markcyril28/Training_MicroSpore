@@ -51,7 +51,7 @@ YOLO_MODELS=(
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
     #"yolo11l.pt"      # large    - slower
-    "yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
+    #"yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
 )
 
 # Select first model from the array (for quick reference)
@@ -117,7 +117,7 @@ BATCH_SIZE_LIST=(
 )
 
 IMG_SIZE_LIST=(
-    # 320                   # fast, low resolution
+    320                   # fast, low resolution
     # 512                   # medium resolution
     # 608                   # from microspores.cfg (width/height=608)
     640                   # standard resolution
@@ -181,7 +181,7 @@ OPTIMIZER_LIST=(
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
-    "RGB"                   # RGB color images (default)
+    #"RGB"                   # RGB color images (default)
     # "grayscale"           # grayscale images
 )
 

@@ -87,7 +87,7 @@ DEFAULT_DATASET="${DATASET_LIST[0]}"
 # PATIENCE:   ↑ waits longer before stopping            | ↓ stops earlier, saves time
 # WORKERS:    ↑ faster data loading (match CPU cores)   | ↓ less CPU usage
 EPOCHS_LIST=(
-    10                      # quick test (OPTIMAL for local testing)
+    5                      # quick test (OPTIMAL for local testing)
     # 50                    # short training
     # 100                   # standard training
     # 150                   # optimal training (early stopping will trigger if converged)
@@ -95,7 +95,7 @@ EPOCHS_LIST=(
 )
 
 PATIENCE_LIST=(
-    25                      # quick stopping (OPTIMAL for local - faster iteration)
+    5                      # quick stopping (OPTIMAL for local - faster iteration)
     # 50                    # standard patience
     # 100                   # balanced patience
 )
