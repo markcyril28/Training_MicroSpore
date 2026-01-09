@@ -431,6 +431,7 @@ calculate_total_combinations() {
     total=$((total * ${#LR0_LIST[@]}))
     total=$((total * ${#OPTIMIZER_LIST[@]}))
     total=$((total * ${#COLOR_MODE_LIST[@]}))
+    total=$((total * ${#CLASS_FOCUS_MODE_LIST[@]}))
     echo $total
 }
 
@@ -552,6 +553,7 @@ generate_exp_name() {
     local optimizer="$7"
     local color_mode="$8"
     local timestamp="$9"
+    local class_focus_mode="${10}"
     
     # Format LR0 for filename (remove decimal point)
     local lr0_str=$(echo "${lr0}" | sed 's/\./_/g')
@@ -562,7 +564,16 @@ generate_exp_name() {
         gray_str="gray"
     fi
     
-    echo "${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_${timestamp}"
+    # Add class focus mode indicator (shortened for filename)
+    local balance_str="bal-none"
+    case "$class_focus_mode" in
+        "auto") balance_str="bal-auto" ;;
+        "sqrt") balance_str="bal-sqrt" ;;
+        "manual") balance_str="bal-manual" ;;
+        *) balance_str="bal-none" ;;
+    esac
+    
+    echo "${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_${balance_str}_${timestamp}"
 }
 
 # Function to check if training already completed for given params
@@ -575,6 +586,7 @@ check_training_exists() {
     local lr0="$6"
     local optimizer="$7"
     local color_mode="$8"
+    local class_focus_mode="$9"
     
     # Format LR0 for filename (remove decimal point)
     local lr0_str=$(echo "${lr0}" | sed 's/\./_/g')
@@ -585,8 +597,17 @@ check_training_exists() {
         gray_str="gray"
     fi
     
-    # Build pattern to match: {dataset}_{model}_e{epochs}_b{batch}_img{size}_lr{lr0}_{optimizer}_{color}_*
-    local pattern="${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_"
+    # Add class focus mode indicator
+    local balance_str="bal-none"
+    case "$class_focus_mode" in
+        "auto") balance_str="bal-auto" ;;
+        "sqrt") balance_str="bal-sqrt" ;;
+        "manual") balance_str="bal-manual" ;;
+        *) balance_str="bal-none" ;;
+    esac
+    
+    # Build pattern to match: {dataset}_{model}_e{epochs}_b{batch}_img{size}_lr{lr0}_{optimizer}_{color}_{balance}_*
+    local pattern="${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_${balance_str}_"
     
     # Look for matching directories with completed training
     # Use find for more reliable file detection (works better in WSL/cross-platform)
@@ -615,6 +636,7 @@ for IMG_SIZE in "${IMG_SIZE_LIST[@]}"; do
 for LR0 in "${LR0_LIST[@]}"; do
 for OPTIMIZER in "${OPTIMIZER_LIST[@]}"; do
 for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
+for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
 
     CURRENT_RUN=$((CURRENT_RUN + 1))
     
@@ -673,8 +695,7 @@ for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
     MULTI_SCALE="${MULTI_SCALE_LIST[0]}"
     RECT="${RECT_LIST[0]}"
     
-    # Class focus parameters
-    CLASS_FOCUS_MODE="${CLASS_FOCUS_MODE_LIST[0]}"
+    # Class focus parameters (CLASS_FOCUS_MODE is from the loop)
     CLASS_FOCUS_CLASSES="${CLASS_FOCUS_CLASSES_LIST[0]}"
     CLASS_FOCUS_FOLD="${CLASS_FOCUS_FOLD_LIST[0]}"
     CLASS_FOCUS_TARGET="${CLASS_FOCUS_TARGET_LIST[0]}"
@@ -703,15 +724,23 @@ for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
     # Format LR0 for run identifier (match folder naming: replace dots with underscores)
     LR0_DISPLAY=$(echo "${LR0}" | sed 's/\./_/g')
     
+    # Class balance mode indicator for display
+    case "$CLASS_FOCUS_MODE" in
+        "auto") BALANCE_DISPLAY="bal-auto" ;;
+        "sqrt") BALANCE_DISPLAY="bal-sqrt" ;;
+        "manual") BALANCE_DISPLAY="bal-manual" ;;
+        *) BALANCE_DISPLAY="bal-none" ;;
+    esac
+    
     # Create run identifier for tracking (includes dataset name, matches folder pattern)
-    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_e${EPOCHS}_b${BATCH_SIZE}_img${IMG_SIZE}_lr${LR0_DISPLAY}_${OPTIMIZER}_${GRAY_DISPLAY}"
+    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_e${EPOCHS}_b${BATCH_SIZE}_img${IMG_SIZE}_lr${LR0_DISPLAY}_${OPTIMIZER}_${GRAY_DISPLAY}_${BALANCE_DISPLAY}"
     
     #===========================================================================
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
     #===========================================================================
     if [ "$SKIP_EXISTING" = true ]; then
         # Use || true to prevent set -e from exiting when no match found (returns 1)
-        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE") || true
+        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$CLASS_FOCUS_MODE") || true
         if [ -n "$existing_dir" ]; then
             print_warning "Skipping ${RUN_ID} - already trained: $(basename "$existing_dir")"
             SKIPPED_RUNS+=("${RUN_ID}")
@@ -721,7 +750,7 @@ for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
     
     # Generate experiment name with timestamp and parameters
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP")
+    EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP" "$CLASS_FOCUS_MODE")
     
     #===========================================================================
     # INITIALIZE LOGGING FOR THIS RUN
@@ -882,6 +911,7 @@ for COLOR_MODE in "${COLOR_MODE_LIST[@]}"; do
         sleep ${REST_TIME_PER_RUN}
     fi
 
+done  # CLASS_FOCUS_MODE
 done  # COLOR_MODE
 done  # OPTIMIZER
 done  # LR0
