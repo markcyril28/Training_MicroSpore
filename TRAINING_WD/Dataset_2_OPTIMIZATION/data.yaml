@@ -1,0 +1,19 @@
+# Dataset 2 Configuration
+# Update paths and classes when dataset is ready
+# NOTE: The 'path' field is automatically updated at runtime for portability
+
+path: /mnt/c/PIPELINE/_MicroSpore/C_TRAINING/TRAINING_WD/Dataset_2_OPTIMIZATION
+train: Train
+val: Test
+
+names:
+  0: tetrad
+  1: young_microspore
+  2: mid_microspore
+  3: late_microspore
+  4: young_pollen
+  5: midlate_pollen
+  6: mature_pollen
+  7: others
+
+nc: 8
