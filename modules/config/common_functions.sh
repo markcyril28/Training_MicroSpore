@@ -224,22 +224,24 @@ is_wsl() {
 }
 
 #===============================================================================
-# YOLO MODEL DEFINITIONS
+# YOLO MODEL DEFINITIONS (Ultralytics-supported models)
 #===============================================================================
 # Centralized model lists used across scripts
+#
+# NOTE: YOLOv4 is NOT supported by Ultralytics. Use run_train_yolov4_*.sh
+#       scripts for YOLOv4 training with the Darknet-compatible pipeline.
+#       YOLOv4 models: yolov4-tiny, yolov4, yolov4-csp, yolov4x-mish
 
-# All model arrays
-YOLOV4_MODELS=("yolov4.pt" "yolov4-tiny.pt" "yolov4s-mish.pt" "yolov4-csp.pt" "yolov4x-mish.pt")
+# Ultralytics-supported model arrays
 YOLOV5_MODELS=("yolov5nu.pt" "yolov5su.pt" "yolov5mu.pt" "yolov5lu.pt" "yolov5xu.pt")
 YOLOV8_MODELS=("yolov8n.pt" "yolov8s.pt" "yolov8m.pt" "yolov8l.pt" "yolov8x.pt")
 YOLOV9_MODELS=("yolov9t.pt" "yolov9s.pt" "yolov9m.pt" "yolov9c.pt" "yolov9e.pt")
 YOLOV10_MODELS=("yolov10n.pt" "yolov10s.pt" "yolov10m.pt" "yolov10l.pt" "yolov10x.pt")
 YOLO11_MODELS=("yolo11n.pt" "yolo11s.pt" "yolo11m.pt" "yolo11l.pt" "yolo11x.pt")
 
-# Get all models as single array
+# Get all Ultralytics models as single array
 get_all_yolo_models() {
     local all_models=()
-    all_models+=("${YOLOV4_MODELS[@]}")
     all_models+=("${YOLOV5_MODELS[@]}")
     all_models+=("${YOLOV8_MODELS[@]}")
     all_models+=("${YOLOV9_MODELS[@]}")

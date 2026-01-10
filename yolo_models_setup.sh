@@ -1,8 +1,18 @@
 #!/bin/bash
 #===============================================================================
-# Microspore Phenotyping - YOLO Models Setup Script
-# Downloads and sets up all available YOLO model variants.
+# Microspore Phenotyping - YOLO Models Setup Script (Ultralytics)
+# Downloads and sets up Ultralytics YOLO model variants.
 # Uses common_functions.sh for shared utilities (DRY principle).
+#
+# SUPPORTED MODELS (Ultralytics):
+#   - YOLOv5  (yolov5nu, yolov5su, yolov5mu, yolov5lu, yolov5xu)
+#   - YOLOv8  (yolov8n, yolov8s, yolov8m, yolov8l, yolov8x) - Recommended
+#   - YOLOv9  (yolov9t, yolov9s, yolov9m, yolov9c, yolov9e)
+#   - YOLOv10 (yolov10n, yolov10s, yolov10m, yolov10l, yolov10x)
+#   - YOLO11  (yolo11n, yolo11s, yolo11m, yolo11l, yolo11x) - Latest
+#
+# NOTE: YOLOv4 is NOT supported by Ultralytics!
+#       Use run_train_yolov4_local.sh or run_train_yolov4_server.sh instead.
 #===============================================================================
 
 set -e  # Exit on error
@@ -104,10 +114,10 @@ download_model_set() {
 }
 
 list_models() {
-    print_header "Available YOLO Models"
+    print_header "Available YOLO Models (Ultralytics)"
     
-    echo "YOLOv4 (5 variants):"
-    for m in "${YOLOV4_MODELS[@]}"; do echo "  - $m"; done
+    print_warning "NOTE: YOLOv4 is NOT supported by Ultralytics."
+    echo "       Use run_train_yolov4_*.sh for YOLOv4 (Darknet pipeline)."
     echo ""
     
     echo "YOLOv5 (5 variants):"
@@ -153,17 +163,18 @@ show_downloaded() {
 
 show_menu() {
     echo ""
-    echo "Select models to download:"
+    echo "Select models to download (Ultralytics only):"
+    echo ""
+    echo "  NOTE: YOLOv4 requires Darknet - use run_train_yolov4_*.sh"
     echo ""
     echo "  1) YOLOv8 small only (yolov8s.pt) - Quick start, recommended"
     echo "  2) YOLOv8 all variants (5 models)"
-    echo "  3) All YOLOv4 models (5 models)"
-    echo "  4) All YOLOv5 models (5 models)"
-    echo "  5) All YOLOv9 models (5 models)"
-    echo "  6) All YOLOv10 models (5 models)"
-    echo "  7) All YOLO11 models (5 models) - Latest"
-    echo "  8) All small/nano models (12 models) - Best for 8GB VRAM"
-    echo "  9) ALL models (30 models) - Full download"
+    echo "  3) All YOLOv5 models (5 models)"
+    echo "  4) All YOLOv9 models (5 models)"
+    echo "  5) All YOLOv10 models (5 models)"
+    echo "  6) All YOLO11 models (5 models) - Latest"
+    echo "  7) All small/nano models (10 models) - Best for 8GB VRAM"
+    echo "  8) ALL models (25 models) - Full download"
     echo ""
     echo "  l) List all available models"
     echo "  s) Show downloaded models"
@@ -201,24 +212,19 @@ main() {
                     download_model_set "YOLOv8" "${YOLOV8_MODELS[@]}"
                     ;;
                 3)
-                    download_model_set "YOLOv4" "${YOLOV4_MODELS[@]}"
-                    ;;
-                4)
                     download_model_set "YOLOv5" "${YOLOV5_MODELS[@]}"
                     ;;
-                5)
+                4)
                     download_model_set "YOLOv9" "${YOLOV9_MODELS[@]}"
                     ;;
-                6)
+                5)
                     download_model_set "YOLOv10" "${YOLOV10_MODELS[@]}"
                     ;;
-                7)
+                6)
                     download_model_set "YOLO11" "${YOLO11_MODELS[@]}"
                     ;;
-                8)
+                7)
                     print_header "Downloading Small/Nano Models (Best for 8GB VRAM)"
-                    download_model "yolov4-tiny.pt"
-                    download_model "yolov4s-mish.pt"
                     download_model "yolov5nu.pt"
                     download_model "yolov5su.pt"
                     download_model "yolov8n.pt"
@@ -230,8 +236,7 @@ main() {
                     download_model "yolo11n.pt"
                     download_model "yolo11s.pt"
                     ;;
-                9)
-                    download_model_set "YOLOv4" "${YOLOV4_MODELS[@]}"
+                8)
                     download_model_set "YOLOv5" "${YOLOV5_MODELS[@]}"
                     download_model_set "YOLOv8" "${YOLOV8_MODELS[@]}"
                     download_model_set "YOLOv9" "${YOLOV9_MODELS[@]}"
@@ -257,15 +262,11 @@ main() {
         # Command line mode
         case $1 in
             --all)
-                download_model_set "YOLOv4" "${YOLOV4_MODELS[@]}"
                 download_model_set "YOLOv5" "${YOLOV5_MODELS[@]}"
                 download_model_set "YOLOv8" "${YOLOV8_MODELS[@]}"
                 download_model_set "YOLOv9" "${YOLOV9_MODELS[@]}"
                 download_model_set "YOLOv10" "${YOLOV10_MODELS[@]}"
                 download_model_set "YOLO11" "${YOLO11_MODELS[@]}"
-                ;;
-            --yolov4)
-                download_model_set "YOLOv4" "${YOLOV4_MODELS[@]}"
                 ;;
             --yolov5)
                 download_model_set "YOLOv5" "${YOLOV5_MODELS[@]}"
@@ -284,8 +285,6 @@ main() {
                 ;;
             --small)
                 print_header "Downloading Small/Nano Models"
-                download_model "yolov4-tiny.pt"
-                download_model "yolov4s-mish.pt"
                 download_model "yolov5nu.pt"
                 download_model "yolov5su.pt"
                 download_model "yolov8n.pt"
@@ -310,10 +309,12 @@ main() {
                 else
                     echo "Usage: $0 [OPTIONS]"
                     echo ""
+                    echo "NOTE: YOLOv4 is NOT supported by Ultralytics."
+                    echo "      Use run_train_yolov4_*.sh for YOLOv4 (Darknet pipeline)."
+                    echo ""
                     echo "Options:"
                     echo "  (no args)    Interactive mode"
-                    echo "  --all        Download all models (30 models)"
-                    echo "  --yolov4     Download all YOLOv4 models"
+                    echo "  --all        Download all Ultralytics models (25 models)"
                     echo "  --yolov5     Download all YOLOv5 models"
                     echo "  --yolov8     Download all YOLOv8 models"
                     echo "  --yolov9     Download all YOLOv9 models"

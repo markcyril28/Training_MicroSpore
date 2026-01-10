@@ -1,10 +1,13 @@
 #!/bin/bash
 
 #===============================================================================
-# YOLO VERSION SELECTION
+# YOLO VERSION SELECTION (Ultralytics Models)
 #===============================================================================
 # Model arrays are defined in common_functions.sh
 # YOLOV5_MODELS, YOLOV8_MODELS, YOLOV9_MODELS, YOLOV10_MODELS, YOLO11_MODELS
+#
+# NOTE: YOLOv4 is NOT supported by Ultralytics. Use run_train_yolov4_server.sh
+#       for YOLOv4 training with the Darknet-compatible pipeline.
 
 # All available models for selection
 # Uncomment ONE or more models to train with. All models below are pre-downloaded.
@@ -15,14 +18,14 @@ YOLO_MODELS=(
     # "yolov5su.pt"   # small    - fast, good accuracy
     # "yolov5mu.pt"   # medium   - balanced
     # "yolov5lu.pt"   # large    - slower, better accuracy
-    "yolov5xu.pt"     # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    #"yolov5xu.pt"     # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
     
     # YOLOv8 variants - Recommended
     # "yolov8n.pt"    # nano     - fastest, lowest accuracy
     # "yolov8s.pt"    # small    - fast, good accuracy
     # "yolov8m.pt"    # medium   - balanced
     # "yolov8l.pt"    # large    - slower, better accuracy
-    "yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    #"yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
@@ -43,7 +46,7 @@ YOLO_MODELS=(
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
     # "yolo11l.pt"    # large    - slower
-    "yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
+    #"yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
 )
 
 # Select first model from the array (for quick reference)
@@ -103,8 +106,8 @@ PATIENCE_LIST=(
 BATCH_SIZE_LIST=(
     # 8                     # low (for debugging)
     # 16                    # moderate
-    #32                    # standard for high-end GPUs
-    64                      # optimal for MI210 64GB HBM2e (maximum throughput)
+    32                    # standard for high-end GPUs
+    #64                      # optimal for MI210 64GB HBM2e (maximum throughput)
     # 128                   # very high batch size (may need gradient accumulation)
 )
 
@@ -122,8 +125,8 @@ WORKERS_LIST=(
     # 2                     # low CPU
     # 4                     # standard
     # 8                     # moderate (balanced for data loading)
-    16                      # server with 32 threads (optimal: ~half of available threads)
-    # 32                    # maximum (use all threads - may cause contention)
+    #16                      # server with 32 threads (optimal: ~half of available threads)
+    32                    # maximum (use all threads - may cause contention)
 )
 
 # Learning Rate & Optimizer
@@ -173,7 +176,7 @@ OPTIMIZER_LIST=(
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
     "RGB"                   # RGB color images (default)
-    "grayscale"             # grayscale images
+    #"grayscale"             # grayscale images
 )
 
 # Class Focus Configuration (Address Class Imbalance)
@@ -202,9 +205,9 @@ COLOR_MODE_LIST=(
 
 CLASS_FOCUS_MODE_LIST=(
     "none"                  # No class focus (original distribution)
-    "auto"                # Auto-equalize all classes (recommended for production)
-    "sqrt"                # Square root balancing (gentler, good for mild imbalance)
-    "manual"              # Manual class selection with specified fold
+    #"auto"                # Auto-equalize all classes (recommended for production)
+    #"sqrt"                # Square root balancing (gentler, good for mild imbalance)
+    #"manual"              # Manual class selection with specified fold
 )
 
 # Classes to focus on in "manual" mode (comma-separated, no spaces)

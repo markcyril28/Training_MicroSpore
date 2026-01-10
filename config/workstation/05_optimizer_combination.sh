@@ -1,10 +1,13 @@
 #!/bin/bash
 
 #===============================================================================
-# YOLO VERSION SELECTION
+# YOLO VERSION SELECTION (Ultralytics Models)
 #===============================================================================
 # Model arrays are defined in common_functions.sh
 # YOLOV5_MODELS, YOLOV8_MODELS, YOLOV9_MODELS, YOLOV10_MODELS, YOLO11_MODELS
+#
+# NOTE: YOLOv4 is NOT supported by Ultralytics. YOLOv4 training requires
+#       the Darknet-compatible pipeline (available for local/server only).
 
 # All available models for selection
 # Uncomment ONE or more models to train with. All models below are pre-downloaded.

@@ -262,9 +262,10 @@ echo ""
 print_header "Installing Ultralytics YOLO"
 
 # Install ultralytics (includes YOLOv5, YOLOv8, YOLOv9, YOLOv10, YOLO11)
+# NOTE: YOLOv4 is NOT supported by Ultralytics - use run_train_yolov4_local.sh instead
 pip install ultralytics
 
-print_success "Ultralytics YOLO installed"
+print_success "Ultralytics YOLO installed (v5, v8, v9, v10, v11)"
 echo ""
 
 #===============================================================================
@@ -399,13 +400,19 @@ echo ""
 echo "To verify PyTorch CUDA availability, run:"
 echo "    python -c \"import torch; print(f'CUDA available: {torch.cuda.is_available()}')\""
 echo ""
-echo "To download YOLO models, run:"
+echo "To download YOLO models (Ultralytics), run:"
 echo "    chmod +x yolo_models_setup.sh"
 echo "    ./yolo_models_setup.sh"
 echo ""
-echo "To start training, run:"
-echo "    chmod +x run_train.sh"
-echo "    ./run_train.sh"
+echo "Supported Ultralytics models: YOLOv5, YOLOv8, YOLOv9, YOLOv10, YOLO11"
+echo ""
+echo "For YOLOv4 (requires Darknet pipeline):"
+echo "    chmod +x run_train_yolov4_local.sh"
+echo "    ./run_train_yolov4_local.sh"
+echo ""
+echo "To start Ultralytics training, run:"
+echo "    chmod +x run_train_local.sh"
+echo "    ./run_train_local.sh"
 echo ""
 
 if [ "$CUDA_AVAIL" = "True" ]; then

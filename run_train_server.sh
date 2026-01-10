@@ -90,11 +90,12 @@ CONFIG_DIR="${SCRIPT_DIR}/config/server"
 
 CONFIG_SCRIPTS=(
     # Uncomment the configs you want to run:
-    #"01_yolo_combination.sh"           # YOLO model + color mode combinations
+    "01_yolo_combination.sh"           # YOLO model + color mode combinations
     #"02_color_combination.sh"                # Color mode variations (RGB, grayscale)
-    "03_img_size_combination.sh"              # Image size variations (640, 800, 1024)
-    #"04_optimizer_combination.sh"            # Optimizer variations
-    #"05_class_balancing_combination.sh"      # Class balancing strategies
+    "03_img_size_combination_a.sh"              # Image size variations
+    "03_img_size_combination_b.sh"
+    #"04_class_balancing_combination.sh"      # Class balancing strategies
+    #"05_optimizer_combination.sh"            # Optimizer variations
     #"z_epoch_combination.sh"                # Epoch variations
 )
 
@@ -488,8 +489,8 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     BALANCE_DISPLAY=$(get_balance_str "${CLASS_FOCUS_MODE}")
     
     # Create run identifier for tracking using unified naming scheme
-    # Format: {dataset}_{model}_{color}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}
-    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${OPTIMIZER}_${BALANCE_DISPLAY}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
+    # Format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}
+    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
     
     #===========================================================================
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
@@ -740,5 +741,5 @@ print_info "Logs included in each training output folder"
 echo ""
 print_info "To compare models, check the training_stats.json in each experiment folder."
 echo ""
-print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
+print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
 echo ""

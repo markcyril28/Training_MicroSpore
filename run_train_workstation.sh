@@ -435,8 +435,8 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     BALANCE_DISPLAY=$(get_balance_str "${CLASS_FOCUS_MODE}")
     
     # Create run identifier for tracking using unified naming scheme
-    # Format: {dataset}_{model}_{color}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}
-    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${OPTIMIZER}_${BALANCE_DISPLAY}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
+    # Format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}
+    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
     
     #===========================================================================
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
@@ -684,5 +684,5 @@ print_info "Logs included in each training output folder"
 echo ""
 print_info "To compare models, check the training_stats.json in each experiment folder."
 echo ""
-print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
+print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
 echo ""
