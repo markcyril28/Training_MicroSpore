@@ -1,0 +1,9 @@
+Class,Pooled %,Temp %,Train %,Test %
+tetrad,5.55%,6.88%,6.73%,7.46%
+young_microspore,25.70%,18.16%,17.87%,19.20%
+mid_microspore,12.48%,11.65%,12.20%,9.63%
+late_microspore,10.98%,12.88%,12.94%,12.69%
+young_pollen,7.17%,8.79%,9.32%,6.81%
+midlate_pollen,22.63%,23.28%,23.02%,24.24%
+mature_pollen,6.21%,7.72%,7.60%,8.17%
+others,9.29%,10.64%,10.32%,11.80%
