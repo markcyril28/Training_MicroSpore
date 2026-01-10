@@ -415,7 +415,8 @@ def generate_experiment_name(
     model_name: str,
     epochs: int,
     batch_size: int,
-    img_size: int
+    img_size: int,
+    optimizer: str = "auto"
 ) -> str:
     """
     Generate experiment name with parameters and timestamp
@@ -425,6 +426,7 @@ def generate_experiment_name(
         epochs: Number of epochs
         batch_size: Batch size
         img_size: Image size
+        optimizer: Optimizer type (e.g., SGD, Adam, AdamW, auto)
         
     Returns:
         Experiment name string
@@ -432,7 +434,10 @@ def generate_experiment_name(
     timestamp = get_timestamp()
     # Remove .pt extension if present for cleaner name
     model_stem = Path(model_name).stem if "." in model_name else model_name
-    return f"{model_stem}_e{epochs}_b{batch_size}_img{img_size}_{timestamp}"
+    # Normalize optimizer name (lowercase for consistency)
+    opt_name = optimizer.lower() if optimizer else "auto"
+    # Order: model_color_imgsize_optimizer_balance_epochs_batch_lr_timestamp
+    return f"{model_stem}_img{img_size}_{opt_name}_e{epochs}_b{batch_size}_{timestamp}"
 
 
 # =============================================================================

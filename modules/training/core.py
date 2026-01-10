@@ -110,6 +110,7 @@ class YOLOTrainer:
                 epochs=kwargs.get("epochs", 100),
                 batch_size=kwargs.get("batch", 16),
                 img_size=kwargs.get("imgsz", 640),
+                optimizer=kwargs.get("optimizer", "auto"),
             )
         
         # Train

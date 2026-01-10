@@ -215,9 +215,9 @@ COLOR_MODE_LIST=(
 
 CLASS_FOCUS_MODE_LIST=(
     "none"                  # No class focus (original distribution)
-    "auto"                # Auto-equalize all classes (recommended for production)
-    "sqrt"                # Square root balancing (gentler, good for mild imbalance)
-    "manual"              # Manual class selection with specified fold
+    #"auto"                # Auto-equalize all classes (recommended for production)
+    #"sqrt"                # Square root balancing (gentler, good for mild imbalance)
+    #"manual"              # Manual class selection with specified fold
 )
 
 # Classes to focus on in "manual" mode (comma-separated, no spaces)

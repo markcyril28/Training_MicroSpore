@@ -52,6 +52,14 @@ else
     LOGGING_ENABLED=false
 fi
 
+# Source training functions from modules/training/ (DRY principle)
+if [ -f "${SCRIPT_DIR}/modules/training/training_functions.sh" ]; then
+    source "${SCRIPT_DIR}/modules/training/training_functions.sh"
+else
+    echo "ERROR: modules/training/training_functions.sh not found. Please ensure it exists."
+    exit 1
+fi
+
 # Use shared configuration from common_functions.sh
 ENV_NAME="${COMMON_ENV_NAME}"
 
@@ -82,12 +90,12 @@ CONFIG_DIR="${SCRIPT_DIR}/config/server"
 
 CONFIG_SCRIPTS=(
     # Uncomment the configs you want to run:
-    #"01_yolo_color_combination.sh"           # YOLO model + color mode combinations
-    "02_color_combination.sh"                # Color mode variations (RGB, grayscale)
+    #"01_yolo_combination.sh"           # YOLO model + color mode combinations
+    #"02_color_combination.sh"                # Color mode variations (RGB, grayscale)
     #"03_img_size_combination.sh"              # Image size variations (640, 800, 1024)
-    #"04_epoch_combination.sh"                # Epoch variations
     #"05_optimizer_combination.sh"            # Optimizer variations
     #"06_class_balancing_combination.sh"      # Class balancing strategies
+    #"z_epoch_combination.sh"                # Epoch variations
 )
 
 # Device Configuration (applies to all configs)
@@ -266,174 +274,18 @@ echo ""
 
 #===============================================================================
 # CLASS FOCUS HELPER FUNCTIONS
+# Note: Core functions moved to modules/training/training_functions.sh
+# The following functions are sourced from there:
+#   - parse_distribution_file()
+#   - calculate_class_weights()
+#   - display_class_focus_info()
+#   - calculate_total_combinations()
+#   - generate_exp_name()
+#   - check_training_exists()
+#   - get_color_mode_str()
+#   - get_balance_str()
+#   - format_lr_for_filename()
 #===============================================================================
-
-# Parse distribution.txt and extract class counts for Train set
-# Returns associative array-like output: "class_name:count" lines
-parse_distribution_file() {
-    local dist_file="$1"
-    
-    if [ ! -f "${dist_file}" ]; then
-        echo ""
-        return 1
-    fi
-    
-    # Parse the sorted distribution section to get Train counts
-    # Format: Rank   Class                     Train       Test      Total     Pooled       Temp
-    awk '
-    /^[0-9]+[[:space:]]+[a-zA-Z_]+[[:space:]]+[0-9]+/ {
-        # Skip header lines, extract class name and train count
-        class_name = $2
-        train_count = $3
-        if (train_count ~ /^[0-9]+$/) {
-            print class_name ":" train_count
-        }
-    }
-    ' "${dist_file}"
-}
-
-# Calculate class weights based on distribution and focus mode
-# Arguments: dist_file, mode, focus_classes, fold, target
-# Outputs: JSON-like string for Python consumption
-calculate_class_weights() {
-    local dist_file="$1"
-    local mode="$2"
-    local focus_classes="$3"
-    local max_fold="$4"
-    local target="$5"
-    
-    if [ "$mode" = "none" ] || [ ! -f "${dist_file}" ]; then
-        echo "{}"
-        return
-    fi
-    
-    # Parse distribution file
-    local class_counts
-    class_counts=$(parse_distribution_file "${dist_file}")
-    
-    if [ -z "${class_counts}" ]; then
-        echo "{}"
-        return
-    fi
-    
-    # Convert to Python and calculate weights
-    python3 << PYTHON_SCRIPT
-import sys
-
-# Parse class counts
-class_counts = {}
-for line in """${class_counts}""".strip().split('\n'):
-    if ':' in line:
-        name, count = line.split(':')
-        class_counts[name.strip()] = int(count.strip())
-
-if not class_counts:
-    print("{}")
-    sys.exit(0)
-
-mode = "${mode}"
-focus_classes_str = "${focus_classes}"
-max_fold = float("${max_fold}")
-target = "${target}"
-
-# Parse focus classes
-if focus_classes_str.lower() == "all":
-    focus_classes = list(class_counts.keys())
-else:
-    focus_classes = [c.strip() for c in focus_classes_str.split(',')]
-
-# Calculate target count based on mode
-counts = list(class_counts.values())
-if target == "max":
-    target_count = max(counts)
-elif target == "median":
-    sorted_counts = sorted(counts)
-    mid = len(sorted_counts) // 2
-    target_count = sorted_counts[mid] if len(sorted_counts) % 2 else (sorted_counts[mid-1] + sorted_counts[mid]) // 2
-else:  # mean
-    target_count = sum(counts) // len(counts)
-
-# Calculate weights
-weights = {}
-for cls, count in class_counts.items():
-    if mode == "manual":
-        # Apply fold only to specified classes
-        if cls in focus_classes:
-            weights[cls] = min(max_fold, max(1.0, target_count / count if count > 0 else 1.0))
-        else:
-            weights[cls] = 1.0
-    elif mode == "auto":
-        # Auto-balance all classes towards target
-        if count > 0:
-            fold = target_count / count
-            weights[cls] = min(max_fold, max(1.0, fold))
-        else:
-            weights[cls] = 1.0
-    elif mode == "sqrt":
-        # Square root balancing (softer)
-        if count > 0:
-            fold = (target_count / count) ** 0.5
-            weights[cls] = min(max_fold, max(1.0, fold))
-        else:
-            weights[cls] = 1.0
-    else:
-        weights[cls] = 1.0
-
-# Output as JSON-like string
-import json
-print(json.dumps(weights))
-PYTHON_SCRIPT
-}
-
-# Display class focus configuration
-display_class_focus_info() {
-    local mode="$1"
-    local focus_classes="$2"
-    local fold="$3"
-    local target="$4"
-    local weights_json="$5"
-    
-    echo "  Class Focus Configuration:"
-    echo "    - Mode:           ${mode}"
-    
-    if [ "$mode" != "none" ]; then
-        echo "    - Target Classes: ${focus_classes}"
-        echo "    - Max Fold:       ${fold}x"
-        echo "    - Balance Target: ${target}"
-        
-        if [ -n "${weights_json}" ] && [ "${weights_json}" != "{}" ]; then
-            echo "    - Calculated Weights:"
-            echo "${weights_json}" | python3 -c "
-import sys, json
-weights = json.load(sys.stdin)
-for cls, weight in sorted(weights.items(), key=lambda x: -x[1]):
-    if weight > 1.0:
-        print(f'        {cls}: {weight:.2f}x (boosted)')
-    else:
-        print(f'        {cls}: {weight:.2f}x')
-" 2>/dev/null || echo "        (Unable to parse weights)"
-        fi
-    fi
-}
-
-#===============================================================================
-# CALCULATE TOTAL COMBINATIONS
-#===============================================================================
-
-# Calculate total number of training combinations
-calculate_total_combinations() {
-    local total=1
-    total=$((total * ${#DATASET_LIST[@]}))
-    total=$((total * ${#YOLO_MODELS[@]}))
-    total=$((total * ${#EPOCHS_LIST[@]}))
-    total=$((total * ${#BATCH_SIZE_LIST[@]}))
-    total=$((total * ${#IMG_SIZE_LIST[@]}))
-    total=$((total * ${#LR0_LIST[@]}))
-    total=$((total * ${#OPTIMIZER_LIST[@]}))
-    total=$((total * ${#COLOR_MODE_LIST[@]}))
-    total=$((total * ${#CLASS_FOCUS_MODE_LIST[@]}))
-    echo $total
-}
 
 #===============================================================================
 # MAIN CONFIG LOOP - Process each config script sequentially
@@ -542,90 +394,6 @@ SUCCESSFUL_RUNS=()
 FAILED_RUNS=()
 SKIPPED_RUNS=()
 
-# Function to generate experiment name based on current parameters
-generate_exp_name() {
-    local dataset_name="$1"
-    local model_name="$2"
-    local epochs="$3"
-    local batch_size="$4"
-    local img_size="$5"
-    local lr0="$6"
-    local optimizer="$7"
-    local color_mode="$8"
-    local timestamp="$9"
-    local class_focus_mode="${10}"
-    
-    # Format LR0 for filename (remove decimal point)
-    local lr0_str=$(echo "${lr0}" | sed 's/\./_/g')
-    
-    # Add color mode indicator
-    local gray_str="rgb"
-    if [ "$color_mode" = "grayscale" ]; then
-        gray_str="gray"
-    fi
-    
-    # Add class focus mode indicator (shortened for filename)
-    local balance_str="bal-none"
-    case "$class_focus_mode" in
-        "auto") balance_str="bal-auto" ;;
-        "sqrt") balance_str="bal-sqrt" ;;
-        "manual") balance_str="bal-manual" ;;
-        *) balance_str="bal-none" ;;
-    esac
-    
-    echo "${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_${balance_str}_${timestamp}"
-}
-
-# Function to check if training already completed for given params
-check_training_exists() {
-    local dataset_name="$1"
-    local model_name="$2"
-    local epochs="$3"
-    local batch_size="$4"
-    local img_size="$5"
-    local lr0="$6"
-    local optimizer="$7"
-    local color_mode="$8"
-    local class_focus_mode="$9"
-    
-    # Format LR0 for filename (remove decimal point)
-    local lr0_str=$(echo "${lr0}" | sed 's/\./_/g')
-    
-    # Add color mode indicator
-    local gray_str="rgb"
-    if [ "$color_mode" = "grayscale" ]; then
-        gray_str="gray"
-    fi
-    
-    # Add class focus mode indicator
-    local balance_str="bal-none"
-    case "$class_focus_mode" in
-        "auto") balance_str="bal-auto" ;;
-        "sqrt") balance_str="bal-sqrt" ;;
-        "manual") balance_str="bal-manual" ;;
-        *) balance_str="bal-none" ;;
-    esac
-    
-    # Build pattern to match: {dataset}_{model}_e{epochs}_b{batch}_img{size}_lr{lr0}_{optimizer}_{color}_{balance}_*
-    local pattern="${dataset_name}_${model_name}_e${epochs}_b${batch_size}_img${img_size}_lr${lr0_str}_${optimizer}_${gray_str}_${balance_str}_"
-    
-    # Look for matching directories with completed training
-    # Use find for more reliable file detection (works better in WSL/cross-platform)
-    if [ -d "${OUTPUT_DIR}" ]; then
-        while IFS= read -r dir; do
-            # Check if this directory has a completed best.pt weight file
-            if [ -d "${dir}/weights" ]; then
-                # Use find to check for *_best.pt files (more reliable than ls glob)
-                if find "${dir}/weights" -maxdepth 1 -name "*_best.pt" -type f 2>/dev/null | grep -q .; then
-                    echo "$dir"
-                    return 0
-                fi
-            fi
-        done < <(find "${OUTPUT_DIR}" -maxdepth 1 -type d -name "${pattern}*" 2>/dev/null)
-    fi
-    return 1
-}
-
 # Nested loops for all parameter combinations
 # Primary loop parameters (commonly varied for grid search)
 for DATASET_NAME in "${DATASET_LIST[@]}"; do
@@ -714,33 +482,22 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     # Extract model name without extension for naming
     MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
     
-    # Color mode indicator for display
-    if [ "$COLOR_MODE" = "grayscale" ]; then
-        GRAY_DISPLAY="gray"
-    else
-        GRAY_DISPLAY="rgb"
-    fi
+    # Use shared utility functions for consistent naming (from training_functions.sh)
+    GRAY_DISPLAY=$(get_color_mode_str "${COLOR_MODE}")
+    LR0_DISPLAY=$(format_lr_for_filename "${LR0}")
+    BALANCE_DISPLAY=$(get_balance_str "${CLASS_FOCUS_MODE}")
     
-    # Format LR0 for run identifier (match folder naming: replace dots with underscores)
-    LR0_DISPLAY=$(echo "${LR0}" | sed 's/\./_/g')
-    
-    # Class balance mode indicator for display
-    case "$CLASS_FOCUS_MODE" in
-        "auto") BALANCE_DISPLAY="bal-auto" ;;
-        "sqrt") BALANCE_DISPLAY="bal-sqrt" ;;
-        "manual") BALANCE_DISPLAY="bal-manual" ;;
-        *) BALANCE_DISPLAY="bal-none" ;;
-    esac
-    
-    # Create run identifier for tracking (includes dataset name, matches folder pattern)
-    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_e${EPOCHS}_b${BATCH_SIZE}_img${IMG_SIZE}_lr${LR0_DISPLAY}_${OPTIMIZER}_${GRAY_DISPLAY}_${BALANCE_DISPLAY}"
+    # Create run identifier for tracking using unified naming scheme
+    # Format: {dataset}_{model}_{color}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}
+    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${OPTIMIZER}_${BALANCE_DISPLAY}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
     
     #===========================================================================
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
     #===========================================================================
     if [ "$SKIP_EXISTING" = true ]; then
         # Use || true to prevent set -e from exiting when no match found (returns 1)
-        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$CLASS_FOCUS_MODE") || true
+        # Pass OUTPUT_DIR as the 10th parameter for the shared function
+        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$CLASS_FOCUS_MODE" "$OUTPUT_DIR") || true
         if [ -n "$existing_dir" ]; then
             print_warning "Skipping ${RUN_ID} - already trained: $(basename "$existing_dir")"
             SKIPPED_RUNS+=("${RUN_ID}")
@@ -983,5 +740,5 @@ print_info "Logs included in each training output folder"
 echo ""
 print_info "To compare models, check the training_stats.json in each experiment folder."
 echo ""
-print_info "Experiment naming format: {dataset}_{model}_e{epochs}_b{batch}_img{size}_lr{lr0}_{optimizer}_{rgb|gray}_{timestamp}"
+print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
 echo ""

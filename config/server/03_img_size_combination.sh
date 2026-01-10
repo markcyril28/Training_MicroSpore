@@ -110,8 +110,9 @@ PATIENCE_LIST=(
 
 BATCH_SIZE_LIST=(
     # 8                     # low (for debugging)
-    16                    # moderate
-    #32                      # for 640/800/1024 resolution - safe for xlarge models
+    #16                    # moderate
+    32                      # for 640/800/1024 resolution - safe for xlarge models
+    #48
     # 64                    # optimal for MI210 64GB with medium models
     # 128                   # very high batch size (may need gradient accumulation)
 )
@@ -119,10 +120,10 @@ BATCH_SIZE_LIST=(
 IMG_SIZE_LIST=(
     320                   # fast, low resolution
     # 512                   # medium resolution
-    # 608                   # from microspores.cfg (width/height=608)
+    608                   # from microspores.cfg (width/height=608)
     640                   # standard resolution
-    800                   # high resolution
-    1024                    # very high resolution (optimal for MI210 64GB VRAM)
+    #800                   # high resolution
+    #1024                    # very high resolution (optimal for MI210 64GB VRAM)
     # 1280                  # maximum (for detecting very small objects)
 )
 
@@ -130,7 +131,7 @@ WORKERS_LIST=(
     # 2                     # low CPU
     # 4                     # standard
     # 8                     # moderate (balanced for data loading)
-    32                      # server with 32 threads (optimal: ~half of available threads)
+    32                      # server with 32 threads 
     # 64                    # maximum (use all threads - may cause contention)
 )
 
@@ -181,7 +182,7 @@ OPTIMIZER_LIST=(
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
-    #"RGB"                   # RGB color images (default)
+    "RGB"                   # RGB color images (default)
     # "grayscale"           # grayscale images
 )
 
@@ -211,9 +212,9 @@ COLOR_MODE_LIST=(
 
 CLASS_FOCUS_MODE_LIST=(
     "none"                  # No class focus (original distribution)
-    "auto"                # Auto-equalize all classes (recommended for production)
-    "sqrt"                # Square root balancing (gentler, good for mild imbalance)
-    "manual"              # Manual class selection with specified fold
+    #"auto"                # Auto-equalize all classes (recommended for production)
+    #"sqrt"                # Square root balancing (gentler, good for mild imbalance)
+    #"manual"              # Manual class selection with specified fold
 )
 
 # Classes to focus on in "manual" mode (comma-separated, no spaces)
