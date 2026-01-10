@@ -497,7 +497,8 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
         TRAINING_OUTPUT_FILE=$(mktemp)
     fi
     
-    if python -m modules.training.train \
+    # -W ignore suppresses benign RuntimeWarning about module import order
+    if python -W "ignore::RuntimeWarning:runpy" -m modules.training.train \
         --data-yaml "${DATA_YAML}" \
         --model "${YOLO_MODEL}" \
         --weights-dir "${WEIGHTS_DIR}" \

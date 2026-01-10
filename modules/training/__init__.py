@@ -6,39 +6,30 @@ Files:
     train.py          - Training runner and CLI interface
     stats.py          - Statistics, metrics, and reporting
     class_balancer.py - Class imbalance handling via oversampling
+
+Note: All imports are lazy-loaded via __getattr__ to avoid RuntimeWarning
+when running as: python -m modules.training.train
 """
 
-import sys
-
-# Skip imports when running train.py as __main__ to avoid RuntimeWarning
-# This occurs when using: python -m modules.training.train
-_running_as_main = 'modules.training.train' in sys.modules
-
-if not _running_as_main:
-    from .core import YOLOTrainer, YOLO_AVAILABLE
-    from .stats import TrainingStats, generate_training_report
-    from .class_balancer import ClassBalancer, create_balanced_training_data, cleanup_balanced_dataset, generate_balancing_report
-
-# Lazy import for train.py functions to avoid circular import warning when running as __main__
+# Lazy import everything to avoid RuntimeWarning when running train.py as __main__
+# This warning occurs because Python imports the package before executing the script
 def __getattr__(name):
-    """Lazy import for train.py functions and conditionally loaded modules."""
-    # Handle train.py functions
-    if name in ('run_training', 'generate_stats', 'load_or_download_model', 'export_to_onnx'):
-        from . import train as train_module
-        return getattr(train_module, name)
-    # Handle core/stats/balancer imports when running as __main__
+    """Lazy import for all module attributes to avoid RuntimeWarning."""
+    # Core training
     if name == 'YOLOTrainer':
         from .core import YOLOTrainer
         return YOLOTrainer
     if name == 'YOLO_AVAILABLE':
         from .core import YOLO_AVAILABLE
         return YOLO_AVAILABLE
+    # Statistics
     if name == 'TrainingStats':
         from .stats import TrainingStats
         return TrainingStats
     if name == 'generate_training_report':
         from .stats import generate_training_report
         return generate_training_report
+    # Class balancing
     if name == 'ClassBalancer':
         from .class_balancer import ClassBalancer
         return ClassBalancer
@@ -51,6 +42,10 @@ def __getattr__(name):
     if name == 'generate_balancing_report':
         from .class_balancer import generate_balancing_report
         return generate_balancing_report
+    # Training runner functions
+    if name in ('run_training', 'generate_stats', 'load_or_download_model', 'export_to_onnx'):
+        from . import train as train_module
+        return getattr(train_module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 __all__ = [
