@@ -119,8 +119,8 @@ BATCH_SIZE_LIST=(
 
 IMG_SIZE_LIST=(
     320                   # fast, low resolution
-    # 512                   # medium resolution
-    608                   # from microspores.cfg (width/height=608)
+    512                   # medium resolution
+    #608                   # from microspores.cfg (width/height=608)
     640                   # standard resolution
     #800                   # high resolution
     #1024                    # very high resolution (optimal for MI210 64GB VRAM)
@@ -182,8 +182,8 @@ OPTIMIZER_LIST=(
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
-    "RGB"                   # RGB color images (default)
-    # "grayscale"           # grayscale images
+    #"RGB"                   # RGB color images (default)
+    "grayscale"           # grayscale images
 )
 
 # Class Focus Configuration (Address Class Imbalance)
