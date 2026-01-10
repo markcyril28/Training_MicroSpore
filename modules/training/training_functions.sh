@@ -75,7 +75,7 @@ format_lr_for_filename() {
 #
 # Usage: generate_exp_name "dataset" "model" "epochs" "batch" "img_size" "lr0" "optimizer" "color_mode" "timestamp" "class_focus_mode"
 #
-# Output format: {dataset}_{model}_{color}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}_{timestamp}
+# Output format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}
 generate_exp_name() {
     local dataset_name="$1"
     local model_name="$2"
@@ -100,8 +100,8 @@ generate_exp_name() {
     local balance_str
     balance_str=$(get_balance_str "${class_focus_mode}")
     
-    # Unified naming format: {dataset}_{model}_{color}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}_{timestamp}
-    echo "${dataset_name}_${model_name}_${color_str}_img${img_size}_${optimizer}_${balance_str}_e${epochs}_b${batch_size}_lr${lr0_str}_${timestamp}"
+    # Unified naming format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}
+    echo "${dataset_name}_${model_name}_${color_str}_img${img_size}_${balance_str}_${optimizer}_e${epochs}_b${batch_size}_lr${lr0_str}_${timestamp}"
 }
 
 #===============================================================================
@@ -139,8 +139,8 @@ check_training_exists() {
     balance_str=$(get_balance_str "${class_focus_mode}")
     
     # Build pattern to match using unified naming scheme:
-    # {dataset}_{model}_{color}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}_*
-    local pattern="${dataset_name}_${model_name}_${color_str}_img${img_size}_${optimizer}_${balance_str}_e${epochs}_b${batch_size}_lr${lr0_str}_"
+    # {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_*
+    local pattern="${dataset_name}_${model_name}_${color_str}_img${img_size}_${balance_str}_${optimizer}_e${epochs}_b${batch_size}_lr${lr0_str}_"
     
     # Look for matching directories with completed training
     # Use find for more reliable file detection (works better in WSL/cross-platform)
@@ -545,6 +545,6 @@ display_final_summary() {
     echo ""
     print_info "To compare models, check the training_stats.json in each experiment folder."
     echo ""
-    print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{optimizer}_{balance}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
+    print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
     echo ""
 }
