@@ -92,9 +92,9 @@ CONFIG_SCRIPTS=(
     # Uncomment the configs you want to run:
     #"01_yolo_combination.sh"           # YOLO model + color mode combinations
     #"02_color_combination.sh"                # Color mode variations (RGB, grayscale)
-    #"03_img_size_combination.sh"              # Image size variations (640, 800, 1024)
-    #"05_optimizer_combination.sh"            # Optimizer variations
-    #"06_class_balancing_combination.sh"      # Class balancing strategies
+    "03_img_size_combination.sh"              # Image size variations (640, 800, 1024)
+    #"04_optimizer_combination.sh"            # Optimizer variations
+    #"05_class_balancing_combination.sh"      # Class balancing strategies
     #"z_epoch_combination.sh"                # Epoch variations
 )
 
