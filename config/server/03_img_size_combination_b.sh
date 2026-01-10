@@ -111,19 +111,20 @@ PATIENCE_LIST=(
 BATCH_SIZE_LIST=(
     # 8                     # low (for debugging)
     #16                    # moderate
-    32                      # for 640/800/1024 resolution - safe for xlarge models
+    24
+    #32                      # for 640/800/1024 resolution - safe for xlarge models
     #48
     # 64                    # optimal for MI210 64GB with medium models
     # 128                   # very high batch size (may need gradient accumulation)
 )
 
 IMG_SIZE_LIST=(
-    320                   # fast, low resolution
-    512                   # medium resolution
+    #320                   # fast, low resolution
+    #512                   # medium resolution
     #608                   # from microspores.cfg (width/height=608)
-    640                   # standard resolution
+    #640                   # standard resolution
     #800                   # high resolution
-    #1024                    # very high resolution (optimal for MI210 64GB VRAM)
+    1024                    # very high resolution (optimal for MI210 64GB VRAM)
     # 1280                  # maximum (for detecting very small objects)
 )
 
