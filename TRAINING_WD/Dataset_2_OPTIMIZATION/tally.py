@@ -51,6 +51,84 @@ def process_label_file(label_file: Path) -> tuple[dict[int, int], bool]:
     return counts, is_blank
 
 
+def count_annotations_in_file(label_file: Path) -> int:
+    """Count total annotations in a single label file."""
+    count = 0
+    try:
+        with open(label_file, 'r') as f:
+            for line in f:
+                if line.strip():
+                    count += 1
+    except:
+        pass
+    return count
+
+
+def count_annotations_per_class_in_file(label_file: Path) -> dict[int, int]:
+    """Count annotations per class in a single label file.
+    Returns dict mapping class_id -> count."""
+    counts = defaultdict(int)
+    try:
+        with open(label_file, 'r') as f:
+            for line in f:
+                parts = line.strip().split()
+                if parts:
+                    class_id = int(parts[0])
+                    counts[class_id] += 1
+    except (ValueError, IndexError):
+        pass
+    return counts
+
+
+def get_annotations_per_image_by_class(folder: Path, all_class_ids: list[int]) -> dict[int, dict[int, int]]:
+    """Get distribution of annotations per image for each class.
+    Returns dict mapping class_id -> {annotation_count -> number_of_images}."""
+    # Initialize distributions for each class
+    distributions = {cid: defaultdict(int) for cid in all_class_ids}
+    
+    if not folder.exists():
+        return distributions
+    
+    # Find all image files
+    image_files = [f for f in folder.rglob("*") if f.suffix.lower() in IMAGE_EXTENSIONS]
+    
+    for img_file in image_files:
+        label_file = img_file.with_suffix('.txt')
+        if label_file.exists():
+            class_counts = count_annotations_per_class_in_file(label_file)
+        else:
+            class_counts = {}
+        
+        # For each class, record how many annotations this image has
+        for cid in all_class_ids:
+            ann_count = class_counts.get(cid, 0)
+            distributions[cid][ann_count] += 1
+    
+    return distributions
+
+
+def get_annotations_per_image_distribution(folder: Path) -> dict[int, int]:
+    """Get distribution of annotations per image.
+    Returns dict mapping annotation_count -> number_of_images."""
+    distribution = defaultdict(int)
+    
+    if not folder.exists():
+        return distribution
+    
+    # Find all image files
+    image_files = [f for f in folder.rglob("*") if f.suffix.lower() in IMAGE_EXTENSIONS]
+    
+    for img_file in image_files:
+        label_file = img_file.with_suffix('.txt')
+        if label_file.exists():
+            ann_count = count_annotations_in_file(label_file)
+        else:
+            ann_count = 0
+        distribution[ann_count] += 1
+    
+    return distribution
+
+
 def count_labels(folder: Path) -> tuple[dict[int, int], int]:
     """Count instances per class from YOLO label files (.txt) using multithreading.
     Also returns count of blank (empty) label files."""
@@ -108,11 +186,31 @@ def count_unannotated_images(folder: Path) -> int:
     return unannotated
 
 
+def count_images(folder: Path) -> int:
+    """Count total number of images in a folder."""
+    if not folder.exists():
+        return 0
+    return sum(1 for f in folder.rglob("*") if f.suffix.lower() in IMAGE_EXTENSIONS)
+
+
 def save_distribution_csv(train_counts: dict, test_counts: dict, pooled_counts: dict,
                           pooled_copy_counts: dict, temp_counts: dict,
                           class_names: list[str], all_class_ids: list[int],
-                          unannotated: dict[str, int], output_dir: Path, include_pooled_copy: bool = True) -> None:
+                          unannotated: dict[str, int], output_dir: Path, 
+                          image_counts: dict[str, int], include_pooled_copy: bool = True) -> None:
     """Save distribution data to separate CSV files."""
+    
+    # 0. Image count CSV
+    image_count_file = output_dir / "image_counts.csv"
+    with open(image_count_file, 'w') as f:
+        f.write("Folder,Images\n")
+        f.write(f"Train,{image_counts.get('Train', 0)}\n")
+        f.write(f"Test,{image_counts.get('Test', 0)}\n")
+        f.write(f"Pooled,{image_counts.get('Pooled', 0)}\n")
+        f.write(f"Temp,{image_counts.get('Temp', 0)}\n")
+        if include_pooled_copy:
+            f.write(f"Pooled_copy,{image_counts.get('Pooled_copy', 0)}\n")
+        f.write(f"TOTAL,{sum(image_counts.values())}\n")
     
     # 1. Summary CSV
     summary_file = output_dir / "distribution_summary.csv"
@@ -244,7 +342,8 @@ def save_distribution_csv(train_counts: dict, test_counts: dict, pooled_counts: 
 def save_distribution_text(train_counts: dict, test_counts: dict, pooled_counts: dict,
                            pooled_copy_counts: dict, temp_counts: dict, blank_counts: dict[str, int],
                            class_names: list[str], all_class_ids: list[int], 
-                           unannotated: dict[str, int], output_file: Path, include_pooled_copy: bool = True) -> None:
+                           unannotated: dict[str, int], output_file: Path, 
+                           image_counts: dict[str, int], include_pooled_copy: bool = True) -> None:
     """Save distribution summary to text file."""
     line_width = 120 if include_pooled_copy else 100
     
@@ -252,6 +351,25 @@ def save_distribution_text(train_counts: dict, test_counts: dict, pooled_counts:
         f.write("=" * line_width + "\n")
         f.write("DATASET CLASS DISTRIBUTION SUMMARY\n")
         f.write("=" * line_width + "\n\n")
+        
+        # Image count summary
+        f.write("IMAGE COUNT SUMMARY:\n")
+        f.write("-" * line_width + "\n")
+        if include_pooled_copy:
+            f.write(f"{'Folder':<20} {'Images':>10}\n")
+        else:
+            f.write(f"{'Folder':<20} {'Images':>10}\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"{'Train':<20} {image_counts.get('Train', 0):>10}\n")
+        f.write(f"{'Test':<20} {image_counts.get('Test', 0):>10}\n")
+        f.write(f"{'Pooled':<20} {image_counts.get('Pooled', 0):>10}\n")
+        f.write(f"{'Temp':<20} {image_counts.get('Temp', 0):>10}\n")
+        if include_pooled_copy:
+            f.write(f"{'Pooled_copy':<20} {image_counts.get('Pooled_copy', 0):>10}\n")
+        total_images = sum(image_counts.values())
+        f.write("-" * 40 + "\n")
+        f.write(f"{'TOTAL':<20} {total_images:>10}\n")
+        f.write("\n")
         
         if include_pooled_copy:
             f.write(f"{'Class':<20} {'Pooled':>10} {'Temp':>10} {'Train':>10} {'Test':>10} {'Pooled_copy':>12} {'Ratio':>10}\n")
@@ -377,10 +495,375 @@ def save_distribution_text(train_counts: dict, test_counts: dict, pooled_counts:
         f.write("-" * line_width + "\n")
 
 
+def save_annotations_per_image_text(distributions: dict[str, dict[int, int]], 
+                                     output_file: Path, include_pooled_copy: bool = True) -> None:
+    """Save annotations per image distribution to text file."""
+    line_width = 100
+    
+    # Get all unique annotation counts across all folders
+    all_ann_counts = set()
+    for dist in distributions.values():
+        all_ann_counts.update(dist.keys())
+    all_ann_counts = sorted(all_ann_counts)
+    
+    with open(output_file, 'w') as f:
+        f.write("=" * line_width + "\n")
+        f.write("ANNOTATIONS PER IMAGE DISTRIBUTION\n")
+        f.write("=" * line_width + "\n\n")
+        f.write("This shows how many images have N annotations (bounding boxes).\n\n")
+        
+        # Header
+        folders = ['Train', 'Test', 'Pooled', 'Temp']
+        if include_pooled_copy:
+            folders.append('Pooled_copy')
+        
+        header = f"{'Annotations':<15}"
+        for folder in folders:
+            header += f"{folder:>12}"
+        header += f"{'Total':>12}"
+        f.write(header + "\n")
+        f.write("-" * line_width + "\n")
+        
+        totals = {folder: 0 for folder in folders}
+        totals['Total'] = 0
+        
+        for ann_count in all_ann_counts:
+            row = f"{ann_count:<15}"
+            row_total = 0
+            for folder in folders:
+                count = distributions.get(folder, {}).get(ann_count, 0)
+                row += f"{count:>12}"
+                totals[folder] += count
+                row_total += count
+            row += f"{row_total:>12}"
+            totals['Total'] += row_total
+            f.write(row + "\n")
+        
+        f.write("-" * line_width + "\n")
+        total_row = f"{'TOTAL':<15}"
+        for folder in folders:
+            total_row += f"{totals[folder]:>12}"
+        total_row += f"{totals['Total']:>12}"
+        f.write(total_row + "\n")
+        f.write("=" * line_width + "\n")
+        
+        # Statistics summary
+        f.write("\nSTATISTICS SUMMARY:\n")
+        f.write("-" * line_width + "\n")
+        f.write(f"{'Folder':<15} {'Images':>10} {'Total Ann':>12} {'Avg Ann/Img':>14} {'Max Ann':>10} {'Min Ann':>10}\n")
+        f.write("-" * line_width + "\n")
+        
+        for folder in folders:
+            dist = distributions.get(folder, {})
+            total_images = sum(dist.values())
+            total_annotations = sum(k * v for k, v in dist.items())
+            avg_ann = total_annotations / total_images if total_images > 0 else 0
+            max_ann = max(dist.keys()) if dist else 0
+            min_ann = min(dist.keys()) if dist else 0
+            f.write(f"{folder:<15} {total_images:>10} {total_annotations:>12} {avg_ann:>14.2f} {max_ann:>10} {min_ann:>10}\n")
+        
+        f.write("=" * line_width + "\n")
+
+
+def save_annotations_per_image_csv(distributions: dict[str, dict[int, int]], 
+                                    output_dir: Path, include_pooled_copy: bool = True) -> None:
+    """Save annotations per image distribution to CSV."""
+    # Get all unique annotation counts
+    all_ann_counts = set()
+    for dist in distributions.values():
+        all_ann_counts.update(dist.keys())
+    all_ann_counts = sorted(all_ann_counts)
+    
+    folders = ['Train', 'Test', 'Pooled', 'Temp']
+    if include_pooled_copy:
+        folders.append('Pooled_copy')
+    
+    # Distribution CSV
+    csv_file = output_dir / "annotations_per_image.csv"
+    with open(csv_file, 'w') as f:
+        header = "Annotations," + ",".join(folders) + ",Total\n"
+        f.write(header)
+        
+        for ann_count in all_ann_counts:
+            row_values = [str(distributions.get(folder, {}).get(ann_count, 0)) for folder in folders]
+            row_total = sum(distributions.get(folder, {}).get(ann_count, 0) for folder in folders)
+            f.write(f"{ann_count},{','.join(row_values)},{row_total}\n")
+    
+    # Statistics CSV
+    stats_file = output_dir / "annotations_per_image_stats.csv"
+    with open(stats_file, 'w') as f:
+        f.write("Folder,Images,Total_Annotations,Avg_Ann_Per_Image,Max_Ann,Min_Ann\n")
+        for folder in folders:
+            dist = distributions.get(folder, {})
+            total_images = sum(dist.values())
+            total_annotations = sum(k * v for k, v in dist.items())
+            avg_ann = total_annotations / total_images if total_images > 0 else 0
+            max_ann = max(dist.keys()) if dist else 0
+            min_ann = min(dist.keys()) if dist else 0
+            f.write(f"{folder},{total_images},{total_annotations},{avg_ann:.2f},{max_ann},{min_ann}\n")
+
+
+def save_annotations_per_image_graph(distributions: dict[str, dict[int, int]], 
+                                      output_dir: Path, include_pooled_copy: bool = True) -> None:
+    """Generate individual histogram visualization for each folder's annotations per image distribution.
+    Creates two versions: one including 0 annotations, one excluding 0 annotations."""
+    folder_colors = {
+        'Train': '#2ecc71',
+        'Test': '#3498db', 
+        'Pooled': '#e74c3c',
+        'Temp': '#f39c12',
+        'Pooled_copy': '#9b59b6'
+    }
+    
+    folders = ['Train', 'Test', 'Pooled', 'Temp']
+    if include_pooled_copy:
+        folders.append('Pooled_copy')
+    
+    for folder in folders:
+        dist = distributions.get(folder, {})
+        if not dist:
+            continue
+        
+        # Generate two versions: with and without 0 annotations
+        for include_zero in [True, False]:
+            if include_zero:
+                ann_counts = sorted(dist.keys())
+                suffix = ""
+                title_suffix = "(Including 0)"
+            else:
+                ann_counts = sorted([k for k in dist.keys() if k > 0])
+                suffix = "_no_zero"
+                title_suffix = "(Excluding 0)"
+            
+            if not ann_counts:
+                continue
+            
+            values = [dist.get(ann, 0) for ann in ann_counts]
+            
+            fig, ax = plt.subplots(figsize=(14, 8))
+            
+            x = np.arange(len(ann_counts))
+            bars = ax.bar(x, values, color=folder_colors.get(folder, '#888888'), edgecolor='black')
+            
+            # Add value labels on bars
+            for bar in bars:
+                height = bar.get_height()
+                if height > 0:
+                    ax.annotate(f'{int(height)}',
+                                xy=(bar.get_x() + bar.get_width() / 2, height),
+                                xytext=(0, 3),
+                                textcoords="offset points",
+                                ha='center', va='bottom', fontsize=8)
+            
+            ax.set_xlabel('Number of Annotations per Image', fontsize=12, fontweight='bold')
+            ax.set_ylabel('Number of Images', fontsize=12, fontweight='bold')
+            ax.set_title(f'{folder}: Distribution of Annotations per Image {title_suffix}', fontsize=14, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels([str(a) for a in ann_counts], fontsize=9)
+            ax.grid(axis='y', alpha=0.3)
+            
+            # Add statistics text
+            total_images = sum(values)
+            total_annotations = sum(k * v for k, v in dist.items() if (include_zero or k > 0))
+            avg_ann = total_annotations / total_images if total_images > 0 else 0
+            max_ann = max(ann_counts) if ann_counts else 0
+            stats_text = f'Images: {total_images} | Annotations: {total_annotations} | Avg: {avg_ann:.2f}/img | Max: {max_ann}'
+            ax.text(0.5, 0.97, stats_text, transform=ax.transAxes, ha='center', va='top', 
+                    fontsize=10, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            
+            plt.tight_layout()
+            output_file = output_dir / f"annotations_per_image_{folder}{suffix}.jpeg"
+            plt.savefig(output_file, dpi=150, bbox_inches='tight')
+            plt.close()
+
+
+def save_annotations_per_class_text(distributions: dict[str, dict[int, dict[int, int]]], 
+                                     class_names: list[str], all_class_ids: list[int],
+                                     output_file: Path, include_pooled_copy: bool = True) -> None:
+    """Save per-class annotations per image distribution to text file."""
+    line_width = 120
+    
+    folders = ['Train', 'Test', 'Pooled', 'Temp']
+    if include_pooled_copy:
+        folders.append('Pooled_copy')
+    
+    with open(output_file, 'w') as f:
+        f.write("=" * line_width + "\n")
+        f.write("ANNOTATIONS PER IMAGE DISTRIBUTION BY CLASS\n")
+        f.write("=" * line_width + "\n\n")
+        f.write("For each class, shows how many images have N annotations of that class.\n\n")
+        
+        for class_id in all_class_ids:
+            class_name = class_names[class_id] if class_id < len(class_names) else f"class_{class_id}"
+            
+            # Get all unique annotation counts for this class across all folders
+            all_ann_counts = set()
+            for folder in folders:
+                folder_dist = distributions.get(folder, {})
+                class_dist = folder_dist.get(class_id, {})
+                all_ann_counts.update(class_dist.keys())
+            all_ann_counts = sorted(all_ann_counts)
+            
+            if not all_ann_counts:
+                continue
+            
+            f.write(f"\n{'='*80}\n")
+            f.write(f"CLASS: {class_name}\n")
+            f.write(f"{'='*80}\n")
+            
+            # Header
+            header = f"{'Annotations':<15}"
+            for folder in folders:
+                header += f"{folder:>12}"
+            header += f"{'Total':>12}"
+            f.write(header + "\n")
+            f.write("-" * 80 + "\n")
+            
+            totals = {folder: 0 for folder in folders}
+            totals['Total'] = 0
+            
+            for ann_count in all_ann_counts:
+                row = f"{ann_count:<15}"
+                row_total = 0
+                for folder in folders:
+                    count = distributions.get(folder, {}).get(class_id, {}).get(ann_count, 0)
+                    row += f"{count:>12}"
+                    totals[folder] += count
+                    row_total += count
+                row += f"{row_total:>12}"
+                totals['Total'] += row_total
+                f.write(row + "\n")
+            
+            f.write("-" * 80 + "\n")
+            
+            # Statistics for this class
+            f.write(f"\nStatistics for {class_name}:\n")
+            for folder in folders:
+                class_dist = distributions.get(folder, {}).get(class_id, {})
+                total_images = sum(class_dist.values())
+                total_annotations = sum(k * v for k, v in class_dist.items())
+                avg_ann = total_annotations / total_images if total_images > 0 else 0
+                non_zero_imgs = sum(v for k, v in class_dist.items() if k > 0)
+                f.write(f"  {folder}: {total_images} images, {total_annotations} annotations, "
+                        f"avg={avg_ann:.2f}/img, {non_zero_imgs} images with ≥1 annotation\n")
+        
+        f.write("\n" + "=" * line_width + "\n")
+
+
+def save_annotations_per_class_csv(distributions: dict[str, dict[int, dict[int, int]]], 
+                                    class_names: list[str], all_class_ids: list[int],
+                                    output_dir: Path, include_pooled_copy: bool = True) -> None:
+    """Save per-class annotations per image distribution to CSV."""
+    folders = ['Train', 'Test', 'Pooled', 'Temp']
+    if include_pooled_copy:
+        folders.append('Pooled_copy')
+    
+    # Summary CSV with stats per class
+    summary_file = output_dir / "annotations_per_class_summary.csv"
+    with open(summary_file, 'w') as f:
+        header = "Class," + ",".join([f"{folder}_Images,{folder}_Annotations,{folder}_Avg" for folder in folders]) + "\n"
+        f.write(header)
+        
+        for class_id in all_class_ids:
+            class_name = class_names[class_id] if class_id < len(class_names) else f"class_{class_id}"
+            row = [class_name]
+            
+            for folder in folders:
+                class_dist = distributions.get(folder, {}).get(class_id, {})
+                total_images = sum(class_dist.values())
+                total_annotations = sum(k * v for k, v in class_dist.items())
+                avg_ann = total_annotations / total_images if total_images > 0 else 0
+                row.extend([str(total_images), str(total_annotations), f"{avg_ann:.2f}"])
+            
+            f.write(",".join(row) + "\n")
+    
+    # Detailed CSV per class
+    detail_file = output_dir / "annotations_per_class_detail.csv"
+    with open(detail_file, 'w') as f:
+        header = "Class,Annotations," + ",".join(folders) + ",Total\n"
+        f.write(header)
+        
+        for class_id in all_class_ids:
+            class_name = class_names[class_id] if class_id < len(class_names) else f"class_{class_id}"
+            
+            # Get all unique annotation counts for this class
+            all_ann_counts = set()
+            for folder in folders:
+                class_dist = distributions.get(folder, {}).get(class_id, {})
+                all_ann_counts.update(class_dist.keys())
+            all_ann_counts = sorted(all_ann_counts)
+            
+            for ann_count in all_ann_counts:
+                row_values = []
+                row_total = 0
+                for folder in folders:
+                    count = distributions.get(folder, {}).get(class_id, {}).get(ann_count, 0)
+                    row_values.append(str(count))
+                    row_total += count
+                f.write(f"{class_name},{ann_count},{','.join(row_values)},{row_total}\n")
+
+
+def save_annotations_per_class_graph(distributions: dict[str, dict[int, dict[int, int]]], 
+                                      class_names: list[str], all_class_ids: list[int],
+                                      output_dir: Path, include_pooled_copy: bool = True) -> None:
+    """Generate per-class histogram visualizations for annotations per image."""
+    folders = ['Train', 'Test', 'Pooled', 'Temp']
+    colors = ['#2ecc71', '#3498db', '#e74c3c', '#f39c12']
+    if include_pooled_copy:
+        folders.append('Pooled_copy')
+        colors.append('#9b59b6')
+    
+    # Create a combined overview graph showing average annotations per image for each class
+    overview_file = output_dir / "annotations_per_class_overview.jpeg"
+    
+    x = np.arange(len(all_class_ids))
+    width = 0.15 if include_pooled_copy else 0.2
+    
+    fig, ax = plt.subplots(figsize=(18, 8))
+    
+    num_folders = len(folders)
+    for i, (folder, color) in enumerate(zip(folders, colors)):
+        offset = (i - (num_folders - 1) / 2) * width
+        avg_values = []
+        for class_id in all_class_ids:
+            class_dist = distributions.get(folder, {}).get(class_id, {})
+            total_images = sum(class_dist.values())
+            total_annotations = sum(k * v for k, v in class_dist.items())
+            avg = total_annotations / total_images if total_images > 0 else 0
+            avg_values.append(avg)
+        
+        bars = ax.bar(x + offset, avg_values, width, label=folder, color=color, edgecolor='black')
+        
+        # Add value labels
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                ax.annotate(f'{height:.1f}',
+                            xy=(bar.get_x() + bar.get_width() / 2, height),
+                            xytext=(0, 3),
+                            textcoords="offset points",
+                            ha='center', va='bottom', fontsize=6)
+    
+    display_names = [class_names[cid] if cid < len(class_names) else f"class_{cid}" for cid in all_class_ids]
+    
+    ax.set_xlabel('Class', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Average Annotations per Image', fontsize=12, fontweight='bold')
+    ax.set_title('Average Annotations per Image by Class', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(display_names, rotation=45, ha='right', fontsize=10)
+    ax.legend(fontsize=11)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(overview_file, dpi=150, bbox_inches='tight')
+    plt.close()
+
+
 def save_distribution_graph(train_counts: dict, test_counts: dict, pooled_counts: dict,
                             pooled_copy_counts: dict, temp_counts: dict, class_names: list[str], all_class_ids: list[int], 
-                            output_file: Path, include_pooled_copy: bool = True) -> None:
-    """Generate and save bar chart visualization."""
+                            output_dir: Path, include_pooled_copy: bool = True) -> None:
+    """Generate and save bar chart visualizations.
+    Creates multiple versions with different folder combinations and color schemes."""
     # Build display names for each class
     display_names = [class_names[cid] if cid < len(class_names) else f"class_{cid}" for cid in all_class_ids]
     
@@ -390,36 +873,9 @@ def save_distribution_graph(train_counts: dict, test_counts: dict, pooled_counts
     test_values = [test_counts.get(cid, 0) for cid in all_class_ids]
     pooled_values = [pooled_counts.get(cid, 0) for cid in all_class_ids]
     temp_values = [temp_counts.get(cid, 0) for cid in all_class_ids]
+    pooled_copy_values = [pooled_copy_counts.get(cid, 0) for cid in all_class_ids] if include_pooled_copy else []
     
-    if include_pooled_copy:
-        width = 0.15
-        pooled_copy_values = [pooled_copy_counts.get(cid, 0) for cid in all_class_ids]
-        fig, ax = plt.subplots(figsize=(18, 8))
-        
-        bars1 = ax.bar(x - 2*width, train_values, width, label='Train', color='#2ecc71', edgecolor='black')
-        bars2 = ax.bar(x - width, test_values, width, label='Test', color='#3498db', edgecolor='black')
-        bars3 = ax.bar(x, pooled_values, width, label='Pooled', color='#e74c3c', edgecolor='black')
-        bars4 = ax.bar(x + width, pooled_copy_values, width, label='Pooled_copy', color='#9b59b6', edgecolor='black')
-        bars5 = ax.bar(x + 2*width, temp_values, width, label='Temp', color='#f39c12', edgecolor='black')
-        ax.set_title('Dataset Class Distribution: Train vs Test vs Pooled vs Pooled_copy vs Temp', fontsize=14, fontweight='bold')
-    else:
-        width = 0.2
-        fig, ax = plt.subplots(figsize=(16, 8))
-        
-        bars1 = ax.bar(x - 1.5*width, train_values, width, label='Train', color='#2ecc71', edgecolor='black')
-        bars2 = ax.bar(x - 0.5*width, test_values, width, label='Test', color='#3498db', edgecolor='black')
-        bars3 = ax.bar(x + 0.5*width, pooled_values, width, label='Pooled', color='#e74c3c', edgecolor='black')
-        bars5 = ax.bar(x + 1.5*width, temp_values, width, label='Temp', color='#f39c12', edgecolor='black')
-        ax.set_title('Dataset Class Distribution: Train vs Test vs Pooled vs Temp', fontsize=14, fontweight='bold')
-    
-    ax.set_xlabel('Class', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Count', fontsize=12, fontweight='bold')
-    ax.set_xticks(x)
-    ax.set_xticklabels(display_names, rotation=45, ha='right', fontsize=10)
-    ax.legend(fontsize=11)
-    ax.grid(axis='y', alpha=0.3)
-    
-    def add_labels(bars):
+    def add_labels(ax, bars, fontsize=7):
         for bar in bars:
             height = bar.get_height()
             if height > 0:
@@ -427,18 +883,83 @@ def save_distribution_graph(train_counts: dict, test_counts: dict, pooled_counts
                             xy=(bar.get_x() + bar.get_width() / 2, height),
                             xytext=(0, 3),
                             textcoords="offset points",
-                            ha='center', va='bottom', fontsize=7)
+                            ha='center', va='bottom', fontsize=fontsize)
     
-    add_labels(bars1)
-    add_labels(bars2)
-    add_labels(bars3)
+    # Define color schemes
+    color_schemes = {
+        'default': {
+            'Pooled': '#e74c3c', 'Temp': '#f39c12', 'Train': '#2ecc71', 
+            'Test': '#3498db', 'Pooled_copy': '#9b59b6'
+        },
+        'pastel': {
+            'Pooled': '#ffb3ba', 'Temp': '#ffdfba', 'Train': '#baffc9', 
+            'Test': '#bae1ff', 'Pooled_copy': '#e0b3ff'
+        },
+        'dark': {
+            'Pooled': '#c0392b', 'Temp': '#d35400', 'Train': '#27ae60', 
+            'Test': '#2980b9', 'Pooled_copy': '#8e44ad'
+        },
+        'colorblind': {
+            'Pooled': '#d55e00', 'Temp': '#cc79a7', 'Train': '#009e73', 
+            'Test': '#0072b2', 'Pooled_copy': '#f0e442'
+        }
+    }
+    
+    def create_graph(folder_config, colors, title, filename, width_factor=1.0):
+        """Helper to create a bar graph with specified folders and colors."""
+        n_bars = len(folder_config)
+        width = 0.8 / n_bars * width_factor
+        
+        fig, ax = plt.subplots(figsize=(16, 8))
+        
+        all_bars = []
+        for i, (folder_name, values) in enumerate(folder_config):
+            offset = (i - (n_bars - 1) / 2) * width
+            bars = ax.bar(x + offset, values, width, label=folder_name, 
+                         color=colors[folder_name], edgecolor='black')
+            all_bars.append(bars)
+            add_labels(ax, bars)
+        
+        ax.set_xlabel('Class', fontsize=12, fontweight='bold')
+        ax.set_ylabel('Count', fontsize=12, fontweight='bold')
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(display_names, rotation=45, ha='right', fontsize=10)
+        ax.legend(fontsize=11)
+        ax.grid(axis='y', alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / filename, dpi=150, bbox_inches='tight')
+        plt.close()
+    
+    # Folder configurations
+    all_folders = [('Pooled', pooled_values), ('Temp', temp_values), 
+                   ('Train', train_values), ('Test', test_values)]
     if include_pooled_copy:
-        add_labels(bars4)
-    add_labels(bars5)
+        all_folders.append(('Pooled_copy', pooled_copy_values))
     
-    plt.tight_layout()
-    plt.savefig(output_file, dpi=150, bbox_inches='tight')
-    plt.close()
+    train_test_only = [('Train', train_values), ('Test', test_values)]
+    no_temp = [('Pooled', pooled_values), ('Train', train_values), ('Test', test_values)]
+    
+    # Generate graphs for each color scheme
+    for scheme_name, colors in color_schemes.items():
+        suffix = f"_{scheme_name}" if scheme_name != 'default' else ""
+        
+        # All folders
+        title_all = 'Dataset Class Distribution: Pooled vs Temp vs Train vs Test'
+        if include_pooled_copy:
+            title_all += ' vs Pooled_copy'
+        create_graph(all_folders, colors, title_all, f"distribution_graph{suffix}.jpeg")
+        
+        # Train and Test only
+        create_graph(train_test_only, colors, 
+                    'Dataset Class Distribution: Train vs Test',
+                    f"distribution_graph_train_test{suffix}.jpeg")
+        
+        # No Temp
+        create_graph(no_temp, colors,
+                    'Dataset Class Distribution: Pooled vs Train vs Test',
+                    f"distribution_graph_no_temp{suffix}.jpeg")
 
 
 def main():
@@ -473,6 +994,20 @@ def main():
         print(f"  Processing Pooled_copy folder: {POOLED_COPY_DIR}")
         pooled_copy_counts, blank_counts['Pooled_copy'] = count_labels(POOLED_COPY_DIR)
     
+    # Count images in each folder
+    print(f"\nCounting images...")
+    image_counts = {
+        'Train': count_images(TRAIN_DIR),
+        'Test': count_images(TEST_DIR),
+        'Pooled': count_images(POOLED_DIR),
+        'Temp': count_images(TEMP_DIR),
+    }
+    if INCLUDE_POOLED_COPY:
+        image_counts['Pooled_copy'] = count_images(POOLED_COPY_DIR)
+    
+    image_counts_str = ", ".join(f"{k}={v}" for k, v in image_counts.items())
+    print(f"  {image_counts_str}")
+    
     # Count unannotated images
     print(f"\nCounting unannotated images...")
     unannotated = {
@@ -487,6 +1022,23 @@ def main():
     unannotated_str = ", ".join(f"{k}={v}" for k, v in unannotated.items())
     print(f"  {unannotated_str}")
     
+    # Get annotations per image distribution
+    print(f"\nCalculating annotations per image distribution...")
+    ann_per_image_dist = {
+        'Train': get_annotations_per_image_distribution(TRAIN_DIR),
+        'Test': get_annotations_per_image_distribution(TEST_DIR),
+        'Pooled': get_annotations_per_image_distribution(POOLED_DIR),
+        'Temp': get_annotations_per_image_distribution(TEMP_DIR),
+    }
+    if INCLUDE_POOLED_COPY:
+        ann_per_image_dist['Pooled_copy'] = get_annotations_per_image_distribution(POOLED_COPY_DIR)
+    
+    for folder, dist in ann_per_image_dist.items():
+        total_imgs = sum(dist.values())
+        total_anns = sum(k * v for k, v in dist.items())
+        avg = total_anns / total_imgs if total_imgs > 0 else 0
+        print(f"  {folder}: {total_imgs} images, {total_anns} annotations, avg={avg:.2f}/img")
+    
     # Discover all unique class IDs across all folders
     all_class_ids = sorted(set(train_counts.keys()) | set(test_counts.keys()) | set(pooled_counts.keys()) | set(pooled_copy_counts.keys()) | set(temp_counts.keys()))
     print(f"Found {len(all_class_ids)} unique classes: {all_class_ids}")
@@ -496,28 +1048,80 @@ def main():
         shutil.rmtree(OUTPUT_DIR)
     OUTPUT_DIR.mkdir(exist_ok=True)
     
-    text_file = OUTPUT_DIR / "distribution.txt"
-    graph_file = OUTPUT_DIR / "distribution_graph.jpeg"
+    # Create organized subdirectories
+    class_dist_dir = OUTPUT_DIR / "1_class_distribution"
+    ann_per_image_dir = OUTPUT_DIR / "2_annotations_per_image"
+    ann_per_class_dir = OUTPUT_DIR / "3_annotations_per_class"
+    class_dist_dir.mkdir(exist_ok=True)
+    ann_per_image_dir.mkdir(exist_ok=True)
+    ann_per_class_dir.mkdir(exist_ok=True)
     
-    save_distribution_text(train_counts, test_counts, pooled_counts, pooled_copy_counts, temp_counts, blank_counts, class_names, all_class_ids, unannotated, text_file, INCLUDE_POOLED_COPY)
+    # Save class distribution outputs
+    text_file = class_dist_dir / "distribution.txt"
+    
+    save_distribution_text(train_counts, test_counts, pooled_counts, pooled_copy_counts, temp_counts, blank_counts, class_names, all_class_ids, unannotated, text_file, image_counts, INCLUDE_POOLED_COPY)
     print(f"Saved distribution text: {text_file}")
     
-    save_distribution_csv(train_counts, test_counts, pooled_counts, pooled_copy_counts, temp_counts, class_names, all_class_ids, unannotated, OUTPUT_DIR, INCLUDE_POOLED_COPY)
-    print(f"Saved distribution CSVs: {OUTPUT_DIR}")
+    save_distribution_csv(train_counts, test_counts, pooled_counts, pooled_copy_counts, temp_counts, class_names, all_class_ids, unannotated, class_dist_dir, image_counts, INCLUDE_POOLED_COPY)
+    print(f"Saved distribution CSVs: {class_dist_dir}")
     
-    save_distribution_graph(train_counts, test_counts, pooled_counts, pooled_copy_counts, temp_counts, class_names, all_class_ids, graph_file, INCLUDE_POOLED_COPY)
-    print(f"Saved distribution graph: {graph_file}")
+    save_distribution_graph(train_counts, test_counts, pooled_counts, pooled_copy_counts, temp_counts, class_names, all_class_ids, class_dist_dir, INCLUDE_POOLED_COPY)
+    print(f"Saved distribution graphs: {class_dist_dir}")
+    
+    # Save annotations per image distribution
+    ann_per_image_text = ann_per_image_dir / "annotations_per_image.txt"
+    
+    save_annotations_per_image_text(ann_per_image_dist, ann_per_image_text, INCLUDE_POOLED_COPY)
+    print(f"Saved annotations per image text: {ann_per_image_text}")
+    
+    save_annotations_per_image_csv(ann_per_image_dist, ann_per_image_dir, INCLUDE_POOLED_COPY)
+    print(f"Saved annotations per image CSVs: {ann_per_image_dir}")
+    
+    save_annotations_per_image_graph(ann_per_image_dist, ann_per_image_dir, INCLUDE_POOLED_COPY)
+    print(f"Saved annotations per image graphs: {ann_per_image_dir}")
+    
+    # Calculate and save per-class annotations per image distribution
+    print(f"\nCalculating per-class annotations per image distribution...")
+    ann_per_class_dist = {
+        'Train': get_annotations_per_image_by_class(TRAIN_DIR, all_class_ids),
+        'Test': get_annotations_per_image_by_class(TEST_DIR, all_class_ids),
+        'Pooled': get_annotations_per_image_by_class(POOLED_DIR, all_class_ids),
+        'Temp': get_annotations_per_image_by_class(TEMP_DIR, all_class_ids),
+    }
+    if INCLUDE_POOLED_COPY:
+        ann_per_class_dist['Pooled_copy'] = get_annotations_per_image_by_class(POOLED_COPY_DIR, all_class_ids)
+    
+    ann_per_class_text = ann_per_class_dir / "annotations_per_class.txt"
+    save_annotations_per_class_text(ann_per_class_dist, class_names, all_class_ids, ann_per_class_text, INCLUDE_POOLED_COPY)
+    print(f"Saved per-class annotations text: {ann_per_class_text}")
+    
+    save_annotations_per_class_csv(ann_per_class_dist, class_names, all_class_ids, ann_per_class_dir, INCLUDE_POOLED_COPY)
+    print(f"Saved per-class annotations CSVs: {ann_per_class_dir}")
+    
+    save_annotations_per_class_graph(ann_per_class_dist, class_names, all_class_ids, ann_per_class_dir, INCLUDE_POOLED_COPY)
+    print(f"Saved per-class annotations graph: {ann_per_class_dir}")
     
     total_train = sum(train_counts.values())
     total_test = sum(test_counts.values())
     total_pooled = sum(pooled_counts.values())
     total_temp = sum(temp_counts.values())
     total_pooled_copy = sum(pooled_copy_counts.values()) if INCLUDE_POOLED_COPY else 0
+    total_images = sum(image_counts.values())
     
+    print(f"\n{'='*60}")
+    print(f"IMAGE STATISTICS:")
+    print(f"  Total Images: {total_images}")
+    for folder, count in image_counts.items():
+        print(f"    {folder}: {count}")
+    
+    print(f"\nANNOTATION STATISTICS:")
     if INCLUDE_POOLED_COPY:
-        print(f"\nSummary: Train={total_train}, Test={total_test}, Pooled={total_pooled}, Pooled_copy={total_pooled_copy}, Temp={total_temp}, Total={total_train + total_test + total_pooled + total_pooled_copy + total_temp}")
+        print(f"  Train={total_train}, Test={total_test}, Pooled={total_pooled}, Pooled_copy={total_pooled_copy}, Temp={total_temp}")
+        print(f"  Total Annotations={total_train + total_test + total_pooled + total_pooled_copy + total_temp}")
     else:
-        print(f"\nSummary: Train={total_train}, Test={total_test}, Pooled={total_pooled}, Temp={total_temp}, Total={total_train + total_test + total_pooled + total_temp}")
+        print(f"  Train={total_train}, Test={total_test}, Pooled={total_pooled}, Temp={total_temp}")
+        print(f"  Total Annotations={total_train + total_test + total_pooled + total_temp}")
+    print(f"{'='*60}")
 
 
 if __name__ == "__main__":
