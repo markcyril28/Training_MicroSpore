@@ -1,7 +1,15 @@
 #!/bin/bash
+# Init Setup - Convert to Unix line endings & set executable permissions
 
-# Chmod and Converts the file to Unix line endings
-chmod +x ./*.sh
-dos2unix ./*.sh
-find . -type f \( -name "*.txt" -o -name "*.sh" -o -name "*.py" -o -name "*.R" \) -exec dos2unix {} + 2>/dev/null || true
-find . -type f \( -name "*.sh" -o -name "*.py" -o -name "*.pl" -o -name "*.R" \) -exec chmod +x {} + 2>/dev/null || true
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# Convert all text files to Unix line endings
+find . -type f \( -name "*.sh" -o -name "*.py" -o -name "*.txt" -o -name "*.md" \
+    -o -name "*.R" -o -name "*.pl" -o -name "*.yaml" -o -name "*.yml" \
+    -o -name "*.json" -o -name "*.csv" -o -name "*.pt" \) -exec dos2unix {} + 2>/dev/null || true
+
+# Set executable permissions on scripts
+find . -type f \( -name "*.sh" -o -name "*.py" -o -name "*.pl" -o -name "*.R" \) \
+    -exec chmod +x {} + 2>/dev/null || true
+
+echo "Setup complete."
