@@ -21,8 +21,8 @@ WORKFLOW:
     4. Do the same thing for the Blank images (images without annotation text files). 
         Extract from 'Blanks' folder to the 'Train' and 'Test' folder. 
             Default (configurable): 
-                    Train:  90%
-                    Test:   10%
+                    Train:  80%
+                    Test:   20%
 
 FEATURES:
     - Preserves original 'Pooled' folder (only moves, never deletes or modify what is inside the 'Pooled' folder)

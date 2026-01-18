@@ -4,10 +4,6 @@ Orphan File Scanner for YOLO Dataset
 This script scans for images without annotation files and annotation files without images.
 It reports the findings and prompts whether to delete these orphaned files.
 
-Usage:
-    python orphan_file_scanner.py [target_folder]
-    
-    If no target folder is specified, defaults to 'Pooled' folder.
 """
 
 import os
