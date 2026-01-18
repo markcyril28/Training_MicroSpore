@@ -111,8 +111,8 @@ PATIENCE_LIST=(
 BATCH_SIZE_LIST=(
     # 8                     # low (for debugging)
     #16                    # moderate
-    #24
-    32                      # for 640/800/1024 resolution - safe for xlarge models
+    24
+    #32                      # for 640/800/1024 resolution - safe for xlarge models
     #48
     # 64                    # optimal for MI210 64GB with medium models
     # 128                   # very high batch size (may need gradient accumulation)
