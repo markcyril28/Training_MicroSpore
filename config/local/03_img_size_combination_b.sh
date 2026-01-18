@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# SERVER SPECS (Dell Server with AMD ROCm):
-#   GPU: AMD Instinct MI210 (Aldebaran/MI200)
-#   VRAM: 64GB HBM2e
-#   Architecture: gfx90a (CDNA2)
-#   Driver: amdgpu
-#   Compute Platform: ROCm 6.x
-#   CPU Threads: 64
+# LOCAL SPECS (Optimized for typical laptop/desktop):
+#   GPU: Consumer GPU (GTX 5050)
+#   VRAM: 8GB
+#   RAM: 32GB
+#   Driver: 525+
+#   CUDA: 11.8 / 12.1
+#
 
 #===============================================================================
 # YOLO VERSION SELECTION
@@ -27,10 +27,10 @@ YOLO_MODELS=(
     
     # YOLOv8 variants - Recommended
     # "yolov8n.pt"    # nano     - fastest, lowest accuracy
-    # "yolov8s.pt"    # small    - fast, good accuracy
+    #"yolov8s.pt"      # small    - fast, good accuracy (OPTIMAL for 8GB VRAM)
     # "yolov8m.pt"    # medium   - balanced
-    #"yolov8l.pt"      # large    - slower, better accuracy
-    "yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    # "yolov8l.pt"    # large    - slower, better accuracy
+    "yolov8x.pt"    # xlarge   - slowest, best accuracy (needs 16GB+ VRAM)
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
@@ -98,42 +98,41 @@ EPOCHS_LIST=(
     # 100                   # standard training
     # 10                    # quick test
     #150                     # optimal training (early stopping will trigger if converged)
-    200                   # long training (MI210 can handle extended training)
+    200                   # long training (extended training)
     # 300                   # maximum training
 )
 
 PATIENCE_LIST=(
     # 25                    # quick stopping
-    #50                      # standard patience (optimal for 150 epochs)
-    150                   # balanced patience (optimal for convergence detection)
-)
-
-BATCH_SIZE_LIST=(
-    # 8                     # low (for debugging)
-    #16                    # moderate
-    #24
-    32                      # for 640/800/1024 resolution - safe for xlarge models
-    #48
-    # 64                    # optimal for MI210 64GB with medium models
-    # 128                   # very high batch size (may need gradient accumulation)
-)
-
-IMG_SIZE_LIST=(
-    #320                   # fast, low resolution
-    #512                   # medium resolution
-    #608                   # from microspores.cfg (width/height=608)
-    #640                   # standard resolution
-    #800                   # high resolution
-    1024                    # very high resolution (optimal for MI210 64GB VRAM)
-    # 1280                  # maximum (for detecting very small objects)
+    #50                      # standard patience (optimal for convergence detection)
+    150                   # high patience (may train too long without improvement)
 )
 
 WORKERS_LIST=(
     # 2                     # low CPU
     # 4                     # standard
-    # 8                     # moderate (balanced for data loading)
-    32                      # server with 32 threads 
-    # 64                    # maximum (use all threads - may cause contention)
+    8                        # optimal for local machine (8GB VRAM)
+    # 12                    # higher CPU utilization
+    # 32                    # server with 32 threads
+)
+
+BATCH_SIZE_LIST=(
+    8                        # safe for GTX 5050 8GB VRAM (optimal)
+    # 16                    # moderate - may work with smaller models at low resolution
+    # 24                    # higher batch (only for 320px with small models)
+    # 32                    # needs 16GB+ VRAM
+    # 64                    # optimal for MI210 64GB with medium models
+    # 128                   # very high batch size (may need gradient accumulation)
+)
+
+IMG_SIZE_LIST=(
+    320                   # fast, low resolution
+    #512                   # medium resolution
+    #608                   # from microspores.cfg (width/height=608)
+    #640                   # standard resolution
+    #800                   # high resolution
+    #1024                    # very high resolution (optimal for MI210 64GB VRAM)
+    # 1280                  # maximum (for detecting very small objects)
 )
 
 # Learning Rate & Optimizer
@@ -144,9 +143,9 @@ WORKERS_LIST=(
 # WEIGHT_DECAY: ↑ stronger regularization           | ↓ less regularization, may overfit
 # OPTIMIZER:    SGD=stable, Adam/AdamW=faster convergence, auto=recommended
 LR0_LIST=(
-    0.001                   # from microspores.cfg (learning_rate=0.001)
+    #0.001                   # from microspores.cfg (conservative)
+    0.01                    # standard learning rate (recommended for pretrained)
     # 0.005                 # medium-low learning rate
-    # 0.01                  # standard learning rate
     # 0.02                  # high learning rate
 )
 
@@ -183,8 +182,8 @@ OPTIMIZER_LIST=(
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
-    #"RGB"                   # RGB color images (default)
-    "grayscale"           # grayscale images
+    "RGB"                   # RGB color images (recommended)
+    #"grayscale"           # grayscale images
 )
 
 # Class Focus Configuration (Address Class Imbalance)
@@ -342,9 +341,9 @@ COPY_PASTE_LIST=(
 # WARMUP_BIAS_LR:     Initial learning rate for bias during warmup
 # From microspores.cfg: burn_in=1000 batches ≈ 3 epochs with batch 64
 WARMUP_EPOCHS_LIST=(
-    # 3.0                   # standard warmup (from cfg: burn_in=1000)
+    3.0                     # standard warmup (recommended)
     # 0.0                   # no warmup
-    5.0                     # extended warmup
+    #5.0                     # extended warmup
 )
 
 WARMUP_MOMENTUM_LIST=(
@@ -401,9 +400,9 @@ LABEL_SMOOTHING_LIST=(
 # ─────────────────────────────────────────────────────────────────────────────
 # Number of final epochs to disable mosaic augmentation for fine-tuning
 CLOSE_MOSAIC_LIST=(
-    # 10                    # disable mosaic for last 10 epochs
+    10                      # disable mosaic for last 10 epochs (recommended)
     # 0                     # never disable mosaic
-    20                      # disable mosaic for last 20 epochs (better fine-tuning)
+    #20                      # disable mosaic for last 20 epochs
 )
 
 # Multi-scale Training
@@ -434,8 +433,8 @@ PRETRAINED_LIST=(
 RESUME=false                # Resume training from last checkpoint
 
 CACHE_LIST=(
-    # "disk"                # disk cache (use if RAM limited)
-    "ram"                   # RAM cache (fastest - server likely has plenty of RAM)
+    # "disk"               # disk cache (use if RAM limited)
+    "ram"                   # RAM cache (fastest - 32GB RAM is sufficient)
     # false                 # no cache (slowest)
 )
 
