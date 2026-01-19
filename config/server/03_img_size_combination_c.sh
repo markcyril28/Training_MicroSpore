@@ -109,8 +109,9 @@ PATIENCE_LIST=(
 )
 
 BATCH_SIZE_LIST=(
-    # 8                     # low (for debugging)
-    16                      # optimal for 1280 resolution with xlarge models
+    # 4                     # safe for yolov8x/yolo11x at 1280 resolution
+    8                       # optimal for yolov8x at 1280 resolution (MI210 64GB)
+    # 16                    # may OOM with xlarge models at 1280 resolution
     #24
     #32                     # for 640/800/1024 resolution - safe for xlarge models
     #48
