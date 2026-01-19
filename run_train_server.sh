@@ -90,10 +90,11 @@ CONFIG_DIR="${SCRIPT_DIR}/config/server"
 
 CONFIG_SCRIPTS=(
     # Uncomment the configs you want to run:
+    #"01_yolo_combination.sh"           # YOLO model + color mode combinations
     #"02_color_combination.sh"                # Color mode variations (RGB, grayscale)
-    "03_img_size_combination_b.sh"
-    "01_yolo_combination.sh"           # YOLO model + color mode combinations
-    "03_img_size_combination_a.sh"              # Image size variations
+    #"03_img_size_combination_a.sh"              # Image size variations
+    #"03_img_size_combination_b.sh"
+    "03_img_size_combination_c.sh"
     #"04_class_balancing_combination.sh"      # Class balancing strategies
     #"05_optimizer_combination.sh"            # Optimizer variations
     #"z_epoch_combination.sh"                # Epoch variations
