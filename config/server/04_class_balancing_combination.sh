@@ -30,7 +30,7 @@ YOLO_MODELS=(
     # "yolov8s.pt"    # small    - fast, good accuracy
     # "yolov8m.pt"    # medium   - balanced
     # "yolov8l.pt"    # large    - slower, better accuracy
-    #"yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    "yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
@@ -99,7 +99,7 @@ EPOCHS_LIST=(
     # 100                   # standard training
     # 150                   # optimal training (early stopping will trigger if converged)
     #200                     # long training (MI210 can handle extended training)
-    400                   # maximum training
+    500                   # maximum training
 )
 
 PATIENCE_LIST=(
