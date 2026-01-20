@@ -97,7 +97,7 @@ RESUME=false
 
 # Distribution file path (relative to dataset directory)
 # This file contains class distribution statistics for dynamic fold calculation
-CLASS_DISTRIBUTION_FILE="Distribution/distribution.txt"
+CLASS_DISTRIBUTION_FILE="Distribution/1_class_distribution/distribution.txt"
 
 #===============================================================================
 # ENVIRONMENT TYPE

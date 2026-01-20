@@ -94,8 +94,8 @@ CONFIG_SCRIPTS=(
     #"02_color_combination.sh"                # Color mode variations (RGB, grayscale)
     #"03_img_size_combination_a.sh"              # Image size variations
     #"03_img_size_combination_b.sh"
-    "03_img_size_combination_c.sh"
-    #"04_class_balancing_combination.sh"      # Class balancing strategies
+    #"03_img_size_combination_c.sh"
+    "04_class_balancing_combination.sh"      # Class balancing strategies
     #"05_optimizer_combination.sh"            # Optimizer variations
     #"z_epoch_combination.sh"                # Epoch variations
 )
@@ -112,7 +112,7 @@ RESUME=false
 
 # Distribution file path (relative to dataset directory)
 # This file contains class distribution statistics for dynamic fold calculation
-CLASS_DISTRIBUTION_FILE="Distribution/distribution.txt"
+CLASS_DISTRIBUTION_FILE="Distribution/1_class_distribution/distribution.txt"
 
 #===============================================================================
 # ENVIRONMENT TYPE

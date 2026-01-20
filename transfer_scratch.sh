@@ -9,3 +9,5 @@ scp mcmercado@10.0.9.31:/home/mcmercado/Training_MicroSpore/trained_models_outpu
 scp mcmercado@10.0.9.31:/home/mcmercado/Training_MicroSpore/color.zip $PWD 
 
 scp mcmercado@10.0.9.31:~/Training_MicroSpore/color.zip $PWD
+
+scp mcmercado@10.0.9.31:~/Training_MicroSpore/trained_models_output_v2.zip $PWD
