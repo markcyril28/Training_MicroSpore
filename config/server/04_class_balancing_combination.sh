@@ -99,20 +99,20 @@ EPOCHS_LIST=(
     # 100                   # standard training
     # 150                   # optimal training (early stopping will trigger if converged)
     #200                     # long training (MI210 can handle extended training)
-    # 300                   # maximum training
+    400                   # maximum training
 )
 
 PATIENCE_LIST=(
     # 50                    # standard patience
     # 25                    # quick stopping
-    #150                     # balanced patience (optimal for convergence detection)
+    300                     # balanced patience (optimal for convergence detection)
 )
 
 BATCH_SIZE_LIST=(
-    # 8                     # low (for debugging)
-    # 16                    # moderate
+    8                     # low (for debugging)
+    #16                    # moderate
     #32                    # standard for high-end GPUs
-    64                      # optimal for MI210 64GB HBM2e (maximum throughput)
+    #64                      # optimal for MI210 64GB HBM2e (maximum throughput)
     # 128                   # very high batch size (may need gradient accumulation)
 )
 
@@ -123,7 +123,7 @@ IMG_SIZE_LIST=(
     #640                   # standard resolution
     # 800                   # high resolution
     #1024                    # very high resolution (optimal for MI210 64GB VRAM)
-    # 1280                  # maximum (for detecting very small objects)
+    1280                  # maximum (for detecting very small objects)
 )
 
 WORKERS_LIST=(
@@ -161,18 +161,19 @@ MOMENTUM_LIST=(
 )
 
 WEIGHT_DECAY_LIST=(
-    0.0005                  # standard weight decay
+    # 0.0005                # standard weight decay
     # 0.0001                # low regularization
     # 0.001                 # high regularization
+    0.01                    # 20x higher regularization (for extended training / grokking experiments)
 )
 
 OPTIMIZER_LIST=(
-    #"auto"                  # auto-select (recommended)
-    "SGD"                 # Stochastic Gradient Descent
-    "Adam"                # Adam optimizer
-    "AdamW"               # Adam with weight decay
-    "NAdam"               # Nesterov Adam
-    "RAdam"               # Rectified Adam
+    "auto"                  # auto-select (recommended)
+    #"SGD"                 # Stochastic Gradient Descent
+    #"Adam"                # Adam optimizer
+    #"AdamW"               # Adam with weight decay
+    #"NAdam"               # Nesterov Adam
+    #"RAdam"               # Rectified Adam
 )
 
 # Grayscale Configuration
@@ -181,17 +182,17 @@ OPTIMIZER_LIST=(
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
-    "RGB"                   # RGB color images (default)
-    # "grayscale"           # grayscale images
+    #"RGB"                   # RGB color images (default)
+    "grayscale"           # grayscale images
 )
 
 # Class Focus Configuration (Address Class Imbalance)
 # ─────────────────────────────────────────────────────────────────────────────
 # Focus training on specific underrepresented classes by oversampling them.
 # Distribution from Dataset_2_OPTIMIZATION (Train counts):
-#   midlate_pollen: 2740, young_microspore: 2128, late_microspore: 1540
-#   mid_microspore: 1452, others: 1229, Blank: 1228, young_pollen: 1110
-#   mature_pollen: 905, tetrad: 801
+#   midlate_pollen: 2840, young_microspore: 2175, late_microspore: 1562
+#   mid_microspore: 1454, others: 1296, Blank: 1204, young_pollen: 1098
+#   mature_pollen: 947, tetrad: 853
 #
 # CLASS_FOCUS_MODE:
 #   "none"      - No class focus, use original distribution
@@ -210,16 +211,16 @@ COLOR_MODE_LIST=(
 # Example: To oversample tetrad (801) to match midlate_pollen (2740), use fold ~3.4
 
 CLASS_FOCUS_MODE_LIST=(
-    "none"                  # No class focus (original distribution)
-    "auto"                # Auto-equalize all classes (recommended for production)
-    "sqrt"                # Square root balancing (gentler, good for mild imbalance)
+    #"none"                  # No class focus (original distribution)
+    #"auto"                # Auto-equalize all classes (recommended for production)
+    #"sqrt"                # Square root balancing (gentler, good for mild imbalance)
     "manual"              # Manual class selection with specified fold
 )
 
 # Classes to focus on in "manual" mode (comma-separated, no spaces)
 # These are typically the underrepresented classes you want to boost
 CLASS_FOCUS_CLASSES_LIST=(
-    "tetrad,mature_pollen,young_pollen"    # Focus on smallest classes
+    "mid_microspore,late_microspore,young_pollen,midlate_pollen,mature_pollen"    # Focus on confusing classes
     # "tetrad"                              # Focus only on tetrad
     # "tetrad,mature_pollen"                # Focus on two smallest
     # "all"                                 # Apply to all classes (for auto/sqrt modes)
@@ -229,9 +230,9 @@ CLASS_FOCUS_CLASSES_LIST=(
 # In "manual": Multiplies the specified classes by this factor
 # In "auto"/"sqrt": Maximum fold cap to prevent extreme oversampling
 CLASS_FOCUS_FOLD_LIST=(
-    2.0                     # 2x oversampling (moderate boost)
+    #2.0                     # 2x oversampling (moderate boost)
     # 1.5                   # 1.5x oversampling (gentle boost)
-    # 3.0                   # 3x oversampling (aggressive boost)
+    3.0                   # 3x oversampling (aggressive boost)
     # 5.0                   # 5x oversampling (very aggressive - use with caution)
 )
 
@@ -248,7 +249,7 @@ CLASS_FOCUS_TARGET_LIST=(
 
 # Distribution file path (relative to dataset directory)
 # This file contains class distribution statistics for dynamic fold calculation
-CLASS_DISTRIBUTION_FILE="Distribution/distribution.txt"
+CLASS_DISTRIBUTION_FILE="Distribution/1_class_distribution/distribution.txt"
 
 # Augmentation Parameters
 # ─────────────────────────────────────────────────────────────────────────────
