@@ -57,6 +57,41 @@ YOLO_MODELS=(
 # Select first model from the array (for quick reference)
 YOLO_MODEL="${YOLO_MODELS[0]}"
 
+#===============================================================================
+# CONTINUE TRAINING FROM CUSTOM WEIGHTS (Fine-tuning)
+#===============================================================================
+# Use this to continue training from a previously trained model instead of
+# starting from pretrained ImageNet/COCO weights.
+#
+# CONTINUE_FROM_CUSTOM:  true = use CUSTOM_WEIGHTS_PATH, false = use YOLO_MODELS
+# CUSTOM_WEIGHTS_PATH:   Full path to your trained .pt file (best.pt or last.pt)
+#
+# Example workflow:
+#   1. Train initial model (500 epochs) → get best.pt at 71.4% mAP
+#   2. Set CONTINUE_FROM_CUSTOM=true and point to best.pt or last.pt
+#   3. Train for additional epochs with lower LR for fine-tuning
+#
+# Tips for continued training:
+#   - Use lower LR: 0.0001 or 0.00001 (10-100x lower than initial)
+#   - Train for 100-500 additional epochs
+#   - Consider reducing patience to 50-100
+#   - Keep same IMG_SIZE as original training (1280)
+
+CONTINUE_FROM_CUSTOM=true       # Set to true to continue from custom weights
+
+# Full path to your trained model weights
+# Use last.pt to continue from exact state, or best.pt to fine-tune from best checkpoint
+CUSTOM_WEIGHTS_PATH="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/trained_models_output/server/04_class_balancing_combination/Dataset_2_OPTIMIZATION_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400/weights/Dataset_2_OPTIMIZATION_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400_last.pt"
+
+# Additional epochs to train (added to model's current epoch count)
+# When continuing, these epochs are ADDED to the previous training
+ADDITIONAL_EPOCHS_LIST=(
+    500                     # +500 epochs (total ~1000 from original)
+    # 200                   # +200 epochs for moderate fine-tuning
+    # 100                   # +100 epochs for quick fine-tuning
+    # 1000                  # +1000 epochs for grokking experiments
+)
+
 # Dataset Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 # Parent directory is defined in modules/common_functions.sh (synced with config.py)
@@ -94,18 +129,21 @@ DEFAULT_DATASET="${DATASET_LIST[0]}"
 # IMG_SIZE:   ↑ detects small objects better, slower    | ↓ faster, may miss details
 # PATIENCE:   ↑ waits longer before stopping            | ↓ stops earlier, saves time
 # WORKERS:    ↑ faster data loading (match CPU cores)   | ↓ less CPU usage
+# NOTE: When CONTINUE_FROM_CUSTOM=true, use ADDITIONAL_EPOCHS_LIST instead
+# This EPOCHS_LIST is used only when training from scratch
 EPOCHS_LIST=(
     # 10                    # quick test
     # 100                   # standard training
     # 150                   # optimal training (early stopping will trigger if converged)
     #200                     # long training (MI210 can handle extended training)
-    500                   # maximum training
+    500                     # standard training (ignored when continuing)
 )
 
 PATIENCE_LIST=(
-    # 50                    # standard patience
-    # 25                    # quick stopping
-    300                     # balanced patience (optimal for convergence detection)
+    100                     # reduced patience for fine-tuning (quicker early stop)
+    # 50                    # aggressive early stopping
+    # 200                   # moderate patience
+    # 300                   # original patience (may be too long for fine-tuning)
 )
 
 BATCH_SIZE_LIST=(
@@ -142,10 +180,11 @@ WORKERS_LIST=(
 # WEIGHT_DECAY: ↑ stronger regularization           | ↓ less regularization, may overfit
 # OPTIMIZER:    SGD=stable, Adam/AdamW=faster convergence, auto=recommended
 LR0_LIST=(
-    0.001                   # from microspores.cfg (learning_rate=0.001)
-    # 0.005                 # medium-low learning rate
-    # 0.01                  # standard learning rate
-    # 0.02                  # high learning rate
+    # For continued training, use LOWER learning rates (10-100x lower):
+    0.0001                  # recommended for fine-tuning (10x lower)
+    # 0.00005               # very fine-tuning (20x lower)
+    # 0.00001               # ultra fine-tuning (100x lower) - for grokking
+    # 0.001                 # original training LR (too high for fine-tuning)
 )
 
 LRF_LIST=(

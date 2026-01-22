@@ -95,9 +95,12 @@ CONFIG_SCRIPTS=(
     #"03_img_size_combination_a.sh"              # Image size variations
     #"03_img_size_combination_b.sh"
     #"03_img_size_combination_c.sh"
-    "04_class_balancing_combination.sh"      # Class balancing strategies
+    #"04_class_balancing_combination.sh"      # Class balancing strategies
     #"05_optimizer_combination.sh"            # Optimizer variations
     #"z_epoch_combination.sh"                # Epoch variations
+    
+    # Continue training / Fine-tuning configs:
+    "04_class_balancing_combination_continue.sh"  # Continue from trained model
 )
 
 # Device Configuration (applies to all configs)
@@ -372,12 +375,26 @@ for CURRENT_CONFIG in "${VALID_CONFIGS[@]}"; do
     done
     echo ""
 
+# Display continue training info if enabled
+if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ]; then
+    print_warning "=== CONTINUE TRAINING MODE ENABLED ==="
+    echo "  - Custom Weights: ${CUSTOM_WEIGHTS_PATH:-NOT SET}"
+    echo "  - Additional Epochs: ${ADDITIONAL_EPOCHS_LIST[*]:-NOT SET}"
+    echo ""
+fi
+
 TOTAL_COMBINATIONS=$(calculate_total_combinations)
 
 print_info "Parameter Grid Summary:"
 echo "  - Datasets:    ${#DATASET_LIST[@]} (${DATASET_LIST[*]})"
-echo "  - Models:      ${#YOLO_MODELS[@]} (${YOLO_MODELS[*]})"
-echo "  - Epochs:      ${#EPOCHS_LIST[@]} (${EPOCHS_LIST[*]})"
+if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ]; then
+    echo "  - Mode:        CONTINUE TRAINING (fine-tuning)"
+    echo "  - Base Weights: $(basename "${CUSTOM_WEIGHTS_PATH:-unknown}")"
+    echo "  - Add Epochs:  ${#ADDITIONAL_EPOCHS_LIST[@]} (${ADDITIONAL_EPOCHS_LIST[*]})"
+else
+    echo "  - Models:      ${#YOLO_MODELS[@]} (${YOLO_MODELS[*]})"
+    echo "  - Epochs:      ${#EPOCHS_LIST[@]} (${EPOCHS_LIST[*]})"
+fi
 echo "  - Batch Sizes: ${#BATCH_SIZE_LIST[@]} (${BATCH_SIZE_LIST[*]})"
 echo "  - Image Sizes: ${#IMG_SIZE_LIST[@]} (${IMG_SIZE_LIST[*]})"
 echo "  - LR0 values:  ${#LR0_LIST[@]} (${LR0_LIST[*]})"
@@ -396,11 +413,19 @@ SUCCESSFUL_RUNS=()
 FAILED_RUNS=()
 SKIPPED_RUNS=()
 
+# Handle continue training mode - use ADDITIONAL_EPOCHS_LIST if set
+if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ -n "${ADDITIONAL_EPOCHS_LIST[0]:-}" ]; then
+    EFFECTIVE_EPOCHS_LIST=("${ADDITIONAL_EPOCHS_LIST[@]}")
+    print_info "Continue training mode: Using ADDITIONAL_EPOCHS_LIST (${EFFECTIVE_EPOCHS_LIST[*]})"
+else
+    EFFECTIVE_EPOCHS_LIST=("${EPOCHS_LIST[@]}")
+fi
+
 # Nested loops for all parameter combinations
 # Primary loop parameters (commonly varied for grid search)
 for DATASET_NAME in "${DATASET_LIST[@]}"; do
 for YOLO_MODEL in "${YOLO_MODELS[@]}"; do
-for EPOCHS in "${EPOCHS_LIST[@]}"; do
+for EPOCHS in "${EFFECTIVE_EPOCHS_LIST[@]}"; do
 for BATCH_SIZE in "${BATCH_SIZE_LIST[@]}"; do
 for IMG_SIZE in "${IMG_SIZE_LIST[@]}"; do
 for LR0 in "${LR0_LIST[@]}"; do
@@ -474,15 +499,38 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     DIST_FILE="${DATASET_PATH}/${CLASS_DISTRIBUTION_FILE}"
     CLASS_WEIGHTS_JSON=$(calculate_class_weights "${DIST_FILE}" "${CLASS_FOCUS_MODE}" "${CLASS_FOCUS_CLASSES}" "${CLASS_FOCUS_FOLD}" "${CLASS_FOCUS_TARGET}")
     
-    # Check if model exists locally, otherwise will be downloaded
-    if [ -f "${WEIGHTS_DIR}/${YOLO_MODEL}" ]; then
-        YOLO_MODEL_PATH="${WEIGHTS_DIR}/${YOLO_MODEL}"
+    # =========================================================================
+    # CONTINUE TRAINING MODE: Use custom weights if enabled
+    # =========================================================================
+    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ -n "${CUSTOM_WEIGHTS_PATH:-}" ]; then
+        if [ -f "${CUSTOM_WEIGHTS_PATH}" ]; then
+            YOLO_MODEL_PATH="${CUSTOM_WEIGHTS_PATH}"
+            # Extract base model name from custom weights path for naming
+            CUSTOM_WEIGHTS_BASENAME=$(basename "${CUSTOM_WEIGHTS_PATH}" .pt)
+            # Remove _best or _last suffix if present
+            MODEL_NAME=$(echo "${CUSTOM_WEIGHTS_BASENAME}" | sed 's/_best$//' | sed 's/_last$//')
+            MODEL_NAME="${MODEL_NAME}_cont"  # Add suffix to indicate continued training
+            print_info "Continuing training from: ${CUSTOM_WEIGHTS_PATH}"
+        else
+            print_error "Custom weights not found: ${CUSTOM_WEIGHTS_PATH}"
+            print_warning "Falling back to standard model: ${YOLO_MODEL}"
+            if [ -f "${WEIGHTS_DIR}/${YOLO_MODEL}" ]; then
+                YOLO_MODEL_PATH="${WEIGHTS_DIR}/${YOLO_MODEL}"
+            else
+                YOLO_MODEL_PATH="${YOLO_MODEL}"
+            fi
+            MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
+        fi
     else
-        YOLO_MODEL_PATH="${YOLO_MODEL}"
+        # Standard mode: Check if model exists locally, otherwise will be downloaded
+        if [ -f "${WEIGHTS_DIR}/${YOLO_MODEL}" ]; then
+            YOLO_MODEL_PATH="${WEIGHTS_DIR}/${YOLO_MODEL}"
+        else
+            YOLO_MODEL_PATH="${YOLO_MODEL}"
+        fi
+        # Extract model name without extension for naming
+        MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
     fi
-    
-    # Extract model name without extension for naming
-    MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
     
     # Use shared utility functions for consistent naming (from training_functions.sh)
     GRAY_DISPLAY=$(get_color_mode_str "${COLOR_MODE}")
@@ -528,8 +576,13 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     echo "Configuration:"
     echo "  - Dataset:    ${DATASET_NAME}"
     echo "  - Data:       ${DATA_YAML}"
-    echo "  - Model:      ${YOLO_MODEL}"
-    echo "  - Weights:    ${WEIGHTS_DIR}"
+    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ]; then
+        echo "  - Mode:       CONTINUE TRAINING (fine-tuning)"
+        echo "  - Base Model: ${YOLO_MODEL_PATH}"
+    else
+        echo "  - Model:      ${YOLO_MODEL}"
+        echo "  - Weights:    ${WEIGHTS_DIR}"
+    fi
     echo "  - Epochs:     ${EPOCHS}"
     echo "  - Batch Size: ${BATCH_SIZE}"
     echo "  - Image Size: ${IMG_SIZE}"
@@ -554,9 +607,10 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     fi
     
     # -W ignore suppresses benign RuntimeWarning about module import order
+    # Use YOLO_MODEL_PATH which handles both standard and continued training modes
     if python -W "ignore::RuntimeWarning:runpy" -m modules.training.train \
         --data-yaml "${DATA_YAML}" \
-        --model "${YOLO_MODEL}" \
+        --model "${YOLO_MODEL_PATH}" \
         --weights-dir "${WEIGHTS_DIR}" \
         --project-dir "${OUTPUT_DIR}" \
         --exp-name "${EXP_NAME}" \
