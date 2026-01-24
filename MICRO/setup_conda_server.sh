@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# =============================================================================
+# SETUP CONFIGURATION
+# =============================================================================
+# SERVER SPECS (Dell Server with AMD ROCm):
+#   GPU: AMD Instinct MI210 (Aldebaran/MI200)
+#   VRAM: 64GB HBM2e
+#   Architecture: gfx90a (CDNA2)
+#   Driver: amdgpu
+#   Compute Platform: ROCm 6.x
+#   CPU Threads: 32
+#===============================================================================
+
+: << 'SERVER_SPECS'
+=================================== Product Info ======================================
+GPU[0]          : Card Model:           0x740f
+GPU[0]          : Card Vendor:          Advanced Micro Devices, Inc. [AMD/ATI]
+GPU[0]          : Card SKU:             D67301V
+GPU[0]          : GFX Version:          gfx90a
+================================== Memory Info ========================================
+GPU[0]          : VRAM Total Memory (B): 68702699520 (~64GB)
+GPU[0]          : Temperature (Sensor junction) (C): 35.0
+GPU[0]          : Average Graphics Package Power (W): 42.0
+==========================================================================================
+SERVER_SPECS
+
+# Environment settings
+ENV_NAME="micro"                  # Name of the conda environment
+PYTHON_VERSION="3.11"            # Python version (must match environment.yml)
+
+# PyTorch settings for AMD ROCm
+ROCM_VERSION="rocm6.2"           # ROCm version for PyTorch (matches ROCm 6.x platform)
+
+# Optional components
+INSTALL_QT_DEPS=true             # Install Qt/X11 system dependencies
+INSTALL_MATPLOTLIB=true          # Install matplotlib for plotting
+
+# =============================================================================
+# END OF CONFIGURATION
+# =============================================================================
+
+echo "=== Filipino Micro - Conda Environment Setup ==="
+echo ""
+
+# Determine which package manager to use (mamba > conda)
+if command -v mamba &> /dev/null; then
+    PKG_MGR="mamba"
+    echo "Using mamba"
+elif command -v conda &> /dev/null; then
+    PKG_MGR="conda"
+    echo "Using conda"
+else
+    echo "ERROR: No package manager found. Please install mamba or conda first."
+    exit 1
+fi
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR"
+
+echo "Project directory: $PROJECT_DIR"
+echo "Environment name: $ENV_NAME"
+echo ""
+
+# Remove existing environment if it exists
+echo "Checking for existing '$ENV_NAME' environment..."
+if $PKG_MGR env list 2>/dev/null | grep -q "^$ENV_NAME "; then
+    echo "Removing existing '$ENV_NAME' environment..."
+    $PKG_MGR env remove -n "$ENV_NAME" -y
+fi
+
+# Create conda environment
+echo "Creating conda environment '$ENV_NAME'..."
+$PKG_MGR env create -f "$PROJECT_DIR/environment.yml" -n "$ENV_NAME" -y
+
+echo ""
+echo "Activating environment..."
+if [[ "$PKG_MGR" == "mamba" ]]; then
+    eval "$(mamba shell hook --shell bash)"
+    mamba activate "$ENV_NAME"
+else
+    eval "$(conda shell.bash hook)"
+    conda activate "$ENV_NAME"
+fi
+
+# Verify we're in the right environment
+echo "Active environment: ${CONDA_PREFIX:-unknown}"
+
+echo ""
+echo "Installing PyTorch with AMD ROCm support..."
+echo "Target GPU: AMD Instinct MI210 (gfx90a/CDNA2)"
+
+# Verify ROCm is available
+if command -v rocm-smi &> /dev/null; then
+    echo "ROCm detected:"
+    rocm-smi --showproductname 2>/dev/null || true
+else
+    echo "Warning: rocm-smi not found. Ensure ROCm 6.x is installed."
+fi
+
+# Install PyTorch for ROCm
+echo "Installing PyTorch stable with ROCm ${ROCM_VERSION} support..."
+pip install torch torchvision --index-url "https://download.pytorch.org/whl/${ROCM_VERSION}"
+
+if [[ "$INSTALL_MATPLOTLIB" = true ]]; then
+    echo ""
+    echo "Installing plotting dependencies..."
+    pip install matplotlib
+fi
+
+# Install Qt GUI dependencies (required for PyQt6 on Linux/WSL)
+if [[ "$INSTALL_QT_DEPS" = true ]]; then
+    echo ""
+    echo "Installing Qt GUI dependencies..."
+    if [[ "$(uname)" == "Linux" ]]; then
+        echo "Detected Linux - installing system Qt dependencies..."
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq \
+                libxcb-xinerama0 \
+                libxcb-cursor0 \
+                libxcb-xkb1 \
+                libxkbcommon-x11-0 \
+                libxcb-render-util0 \
+                libxcb-icccm4 \
+                libxcb-image0 \
+                libxcb-keysyms1 \
+                libxcb-randr0 \
+                libxcb-shape0 \
+                libxcb-sync1 \
+                libxcb-xfixes0 \
+                libegl1 \
+                libgl1
+            echo "Qt system dependencies installed."
+        else
+            echo "Warning: apt-get not found. Please install Qt xcb dependencies manually."
+        fi
+    fi
+fi
+
+echo ""
+echo "=== Verification ==="
+echo "Python: $(python --version)"
+python -c "import torch; print('PyTorch version:', torch.__version__)"
+python -c "import torch; print('ROCm/HIP available:', torch.cuda.is_available())"
+python -c "import torch; print('Device count:', torch.cuda.device_count() if torch.cuda.is_available() else 0)"
+python -c "import torch; print('Device name:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
+python -c "import torch; print('ROCm version:', torch.version.hip if hasattr(torch.version, 'hip') else 'N/A')"
+
+# ROCm environment hints
+echo ""
+echo "=== AMD ROCm Environment ==="
+echo "GPU: AMD Instinct MI210 (64GB HBM2e)"
+echo "Architecture: gfx90a (CDNA2)"
+echo "ROCm Platform: 6.x"
+echo ""
+echo "Useful ROCm commands:"
+echo "  - rocm-smi              : Monitor GPU status"
+echo "  - rocm-smi --showuse    : Show GPU utilization"
+echo "  - rocm-smi --showmemuse : Show memory usage"
+
+echo ""
+echo "=== Setup Complete ==="
+echo ""
+echo "Next steps:"
+echo "  1. Activate the environment: $PKG_MGR activate $ENV_NAME"
+echo "  2. Verify GPU: rocm-smi"
+echo "  3. Train the ML model: bash train.sh"

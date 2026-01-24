@@ -1,0 +1,475 @@
+{
+  "total_games": 50,
+  "ml_wins": 14,
+  "algo_wins": 36,
+  "draws": 0,
+  "ml_win_rate": 0.28,
+  "algo_win_rate": 0.72,
+  "draw_rate": 0.0,
+  "ml_as_p1_wins": 6,
+  "ml_as_p1_losses": 19,
+  "ml_as_p1_draws": 0,
+  "ml_as_p1_win_rate": 0.24,
+  "ml_as_p2_wins": 8,
+  "ml_as_p2_losses": 17,
+  "ml_as_p2_draws": 0,
+  "ml_as_p2_win_rate": 0.32,
+  "avg_game_length": 42.82,
+  "avg_game_time_ms": 10226.65165901184,
+  "model_path": "models/checkpoints/temp_test_model.pt",
+  "algo_difficulty": "medium",
+  "start_time": "2026-01-17T02:02:42.098132",
+  "end_time": "2026-01-17T02:04:52.088269",
+  "games": [
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 42,
+      "ml_moves": 21,
+      "algo_moves": 21,
+      "game_time_ms": 6636.150360107422
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 45,
+      "ml_moves": 22,
+      "algo_moves": 23,
+      "game_time_ms": 11335.691928863525
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 1,
+      "winner": 1,
+      "num_moves": 43,
+      "ml_moves": 22,
+      "algo_moves": 21,
+      "game_time_ms": 11793.970823287964
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 51,
+      "ml_moves": 25,
+      "algo_moves": 26,
+      "game_time_ms": 13867.246150970459
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 40,
+      "ml_moves": 20,
+      "algo_moves": 20,
+      "game_time_ms": 9168.810844421387
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 37,
+      "ml_moves": 18,
+      "algo_moves": 19,
+      "game_time_ms": 7572.993516921997
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 1,
+      "winner": 1,
+      "num_moves": 35,
+      "ml_moves": 18,
+      "algo_moves": 17,
+      "game_time_ms": 10803.361177444458
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 45,
+      "ml_moves": 22,
+      "algo_moves": 23,
+      "game_time_ms": 10861.045837402344
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 39,
+      "ml_moves": 19,
+      "algo_moves": 20,
+      "game_time_ms": 8236.485004425049
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 41,
+      "ml_moves": 20,
+      "algo_moves": 21,
+      "game_time_ms": 8880.12719154358
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 1,
+      "winner": 1,
+      "num_moves": 35,
+      "ml_moves": 18,
+      "algo_moves": 17,
+      "game_time_ms": 9441.709518432617
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 44,
+      "ml_moves": 22,
+      "algo_moves": 22,
+      "game_time_ms": 11966.935873031616
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 54,
+      "ml_moves": 27,
+      "algo_moves": 27,
+      "game_time_ms": 14263.695001602173
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 1,
+      "winner": 1,
+      "num_moves": 43,
+      "ml_moves": 22,
+      "algo_moves": 21,
+      "game_time_ms": 10088.823318481445
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 38,
+      "ml_moves": 19,
+      "algo_moves": 19,
+      "game_time_ms": 12189.642906188965
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 40,
+      "ml_moves": 20,
+      "algo_moves": 20,
+      "game_time_ms": 12997.296333312988
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 48,
+      "ml_moves": 24,
+      "algo_moves": 24,
+      "game_time_ms": 11640.987396240234
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 36,
+      "ml_moves": 18,
+      "algo_moves": 18,
+      "game_time_ms": 8947.061538696289
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 35,
+      "ml_moves": 17,
+      "algo_moves": 18,
+      "game_time_ms": 8156.797885894775
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 40,
+      "ml_moves": 20,
+      "algo_moves": 20,
+      "game_time_ms": 10590.6982421875
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 56,
+      "ml_moves": 28,
+      "algo_moves": 28,
+      "game_time_ms": 11761.176824569702
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 44,
+      "ml_moves": 22,
+      "algo_moves": 22,
+      "game_time_ms": 11152.900218963623
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 46,
+      "ml_moves": 23,
+      "algo_moves": 23,
+      "game_time_ms": 10646.871089935303
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 39,
+      "ml_moves": 19,
+      "algo_moves": 20,
+      "game_time_ms": 11411.310195922852
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 1,
+      "winner": 1,
+      "num_moves": 45,
+      "ml_moves": 23,
+      "algo_moves": 22,
+      "game_time_ms": 10855.693578720093
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 60,
+      "ml_moves": 30,
+      "algo_moves": 30,
+      "game_time_ms": 15858.279943466187
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 45,
+      "ml_moves": 22,
+      "algo_moves": 23,
+      "game_time_ms": 9466.773509979248
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 38,
+      "ml_moves": 19,
+      "algo_moves": 19,
+      "game_time_ms": 10168.08533668518
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 42,
+      "ml_moves": 21,
+      "algo_moves": 21,
+      "game_time_ms": 8787.662744522095
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 47,
+      "ml_moves": 23,
+      "algo_moves": 24,
+      "game_time_ms": 10162.462949752808
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 52,
+      "ml_moves": 26,
+      "algo_moves": 26,
+      "game_time_ms": 12937.507390975952
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 35,
+      "ml_moves": 17,
+      "algo_moves": 18,
+      "game_time_ms": 7326.571226119995
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 42,
+      "ml_moves": 21,
+      "algo_moves": 21,
+      "game_time_ms": 10928.986549377441
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 31,
+      "ml_moves": 15,
+      "algo_moves": 16,
+      "game_time_ms": 5903.784990310669
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 41,
+      "ml_moves": 20,
+      "algo_moves": 21,
+      "game_time_ms": 8121.255874633789
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 38,
+      "ml_moves": 19,
+      "algo_moves": 19,
+      "game_time_ms": 10808.796167373657
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 43,
+      "ml_moves": 21,
+      "algo_moves": 22,
+      "game_time_ms": 11194.903135299683
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 37,
+      "ml_moves": 18,
+      "algo_moves": 19,
+      "game_time_ms": 6152.27198600769
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 34,
+      "ml_moves": 17,
+      "algo_moves": 17,
+      "game_time_ms": 8203.348398208618
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 48,
+      "ml_moves": 24,
+      "algo_moves": 24,
+      "game_time_ms": 12979.647636413574
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 48,
+      "ml_moves": 24,
+      "algo_moves": 24,
+      "game_time_ms": 10277.242660522461
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 50,
+      "ml_moves": 25,
+      "algo_moves": 25,
+      "game_time_ms": 11088.056564331055
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 42,
+      "ml_moves": 21,
+      "algo_moves": 21,
+      "game_time_ms": 12306.57935142517
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 53,
+      "ml_moves": 26,
+      "algo_moves": 27,
+      "game_time_ms": 12228.453874588013
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 36,
+      "ml_moves": 18,
+      "algo_moves": 18,
+      "game_time_ms": 6159.952402114868
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 40,
+      "ml_moves": 20,
+      "algo_moves": 20,
+      "game_time_ms": 6931.848049163818
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 2,
+      "winner": 2,
+      "num_moves": 52,
+      "ml_moves": 26,
+      "algo_moves": 26,
+      "game_time_ms": 11991.079807281494
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 2,
+      "winner": 1,
+      "num_moves": 37,
+      "ml_moves": 18,
+      "algo_moves": 19,
+      "game_time_ms": 7210.3776931762695
+    },
+    {
+      "result": "ml_win",
+      "ml_player": 1,
+      "winner": 1,
+      "num_moves": 45,
+      "ml_moves": 23,
+      "algo_moves": 22,
+      "game_time_ms": 9173.259258270264
+    },
+    {
+      "result": "algo_win",
+      "ml_player": 1,
+      "winner": 2,
+      "num_moves": 44,
+      "ml_moves": 22,
+      "algo_moves": 22,
+      "game_time_ms": 9697.912693023682
+    }
+  ]
+}

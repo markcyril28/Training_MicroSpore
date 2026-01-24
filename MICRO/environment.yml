@@ -1,0 +1,12 @@
+name: micro
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy
+  - pip:
+    - pyqt6
+    - pyyaml
+    # PyTorch with CUDA is installed separately via setup_conda.sh
