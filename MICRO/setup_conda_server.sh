@@ -68,7 +68,7 @@ echo ""
 echo "Checking for existing '$ENV_NAME' environment..."
 if $PKG_MGR env list 2>/dev/null | grep -q "^$ENV_NAME "; then
     echo "Environment '$ENV_NAME' already exists. Updating..."
-    $PKG_MGR env update -f "$PROJECT_DIR/environment.yml" -n "$ENV_NAME" -y
+    $PKG_MGR env update -f "$PROJECT_DIR/environment.yml" -n "$ENV_NAME"
 else
     # Create conda environment
     echo "Creating conda environment '$ENV_NAME'..."
