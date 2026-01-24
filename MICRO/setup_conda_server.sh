@@ -64,16 +64,16 @@ echo "Project directory: $PROJECT_DIR"
 echo "Environment name: $ENV_NAME"
 echo ""
 
-# Remove existing environment if it exists
+# Check if environment already exists
 echo "Checking for existing '$ENV_NAME' environment..."
 if $PKG_MGR env list 2>/dev/null | grep -q "^$ENV_NAME "; then
-    echo "Removing existing '$ENV_NAME' environment..."
-    $PKG_MGR env remove -n "$ENV_NAME" -y
+    echo "Environment '$ENV_NAME' already exists. Updating..."
+    $PKG_MGR env update -f "$PROJECT_DIR/environment.yml" -n "$ENV_NAME" -y
+else
+    # Create conda environment
+    echo "Creating conda environment '$ENV_NAME'..."
+    $PKG_MGR env create -f "$PROJECT_DIR/environment.yml" -n "$ENV_NAME" -y
 fi
-
-# Create conda environment
-echo "Creating conda environment '$ENV_NAME'..."
-$PKG_MGR env create -f "$PROJECT_DIR/environment.yml" -n "$ENV_NAME" -y
 
 echo ""
 echo "Activating environment..."
