@@ -34,7 +34,6 @@ PYTHON_VERSION="3.11"            # Python version (must match environment.yml)
 ROCM_VERSION="rocm6.2"           # ROCm version for PyTorch (matches ROCm 6.x platform)
 
 # Optional components
-INSTALL_QT_DEPS=true             # Install Qt/X11 system dependencies
 INSTALL_MATPLOTLIB=true          # Install matplotlib for plotting
 
 # =============================================================================
@@ -108,36 +107,6 @@ if [[ "$INSTALL_MATPLOTLIB" = true ]]; then
     echo ""
     echo "Installing plotting dependencies..."
     pip install matplotlib
-fi
-
-# Install Qt GUI dependencies (required for PyQt6 on Linux/WSL)
-if [[ "$INSTALL_QT_DEPS" = true ]]; then
-    echo ""
-    echo "Installing Qt GUI dependencies..."
-    if [[ "$(uname)" == "Linux" ]]; then
-        echo "Detected Linux - installing system Qt dependencies..."
-        if command -v apt-get &> /dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq \
-                libxcb-xinerama0 \
-                libxcb-cursor0 \
-                libxcb-xkb1 \
-                libxkbcommon-x11-0 \
-                libxcb-render-util0 \
-                libxcb-icccm4 \
-                libxcb-image0 \
-                libxcb-keysyms1 \
-                libxcb-randr0 \
-                libxcb-shape0 \
-                libxcb-sync1 \
-                libxcb-xfixes0 \
-                libegl1 \
-                libgl1
-            echo "Qt system dependencies installed."
-        else
-            echo "Warning: apt-get not found. Please install Qt xcb dependencies manually."
-        fi
-    fi
 fi
 
 echo ""
