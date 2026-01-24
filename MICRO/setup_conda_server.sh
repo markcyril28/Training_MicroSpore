@@ -27,7 +27,7 @@ GPU[0]          : Average Graphics Package Power (W): 42.0
 SERVER_SPECS
 
 # Environment settings
-ENV_NAME="micro"                  # Name of the conda environment
+ENV_NAME="train"                  # Name of the conda environment
 PYTHON_VERSION="3.11"            # Python version (must match environment.yml)
 
 # PyTorch settings for AMD ROCm
