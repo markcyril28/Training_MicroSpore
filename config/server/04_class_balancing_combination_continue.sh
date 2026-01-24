@@ -64,12 +64,15 @@ YOLO_MODEL="${YOLO_MODELS[0]}"
 # starting from pretrained ImageNet/COCO weights.
 #
 # CONTINUE_FROM_CUSTOM:  true = use CUSTOM_WEIGHTS_PATH, false = use YOLO_MODELS
+# AUTO_DETECT_LATEST:    true = auto-detect latest trained model (ignores CUSTOM_WEIGHTS_PATH)
 # CUSTOM_WEIGHTS_PATH:   Full path to your trained .pt file (best.pt or last.pt)
+#                        Only used when AUTO_DETECT_LATEST=false
 #
 # Example workflow:
 #   1. Train initial model (500 epochs) → get best.pt at 71.4% mAP
-#   2. Set CONTINUE_FROM_CUSTOM=true and point to best.pt or last.pt
-#   3. Train for additional epochs with lower LR for fine-tuning
+#   2. Set CONTINUE_FROM_CUSTOM=true and AUTO_DETECT_LATEST=true
+#   3. Script will find the latest trained model automatically
+#   4. Train for additional epochs with lower LR for fine-tuning
 #
 # Tips for continued training:
 #   - Use lower LR: 0.0001 or 0.00001 (10-100x lower than initial)
@@ -78,10 +81,20 @@ YOLO_MODEL="${YOLO_MODELS[0]}"
 #   - Keep same IMG_SIZE as original training (1280)
 
 CONTINUE_FROM_CUSTOM=true       # Set to true to continue from custom weights
+AUTO_DETECT_LATEST=true         # Set to true to auto-detect latest trained model
+PREFER_LAST_PT=true             # true = use last.pt (resume exact state), false = use best.pt
 
-# Full path to your trained model weights
+# Full path to your trained model weights (ONLY used when AUTO_DETECT_LATEST=false)
 # Use last.pt to continue from exact state, or best.pt to fine-tune from best checkpoint
 CUSTOM_WEIGHTS_PATH="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/trained_models_output/server/04_class_balancing_combination/Dataset_2_OPTIMIZATION_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400/weights/Dataset_2_OPTIMIZATION_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400_last.pt"
+
+# Directory to search for latest model (used when AUTO_DETECT_LATEST=true)
+# This should point to the output directory where trained models are saved
+AUTO_DETECT_SEARCH_DIR="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/trained_models_output/server/04_class_balancing_combination"
+
+# Optional filters for auto-detection (leave empty to find any latest model)
+AUTO_DETECT_DATASET_FILTER=""      # e.g., "Dataset_2" to only find Dataset_2 models
+AUTO_DETECT_MODEL_FILTER=""        # e.g., "yolov8x" to only find yolov8x models
 
 # Additional epochs to train (added to model's current epoch count)
 # When continuing, these epochs are ADDED to the previous training

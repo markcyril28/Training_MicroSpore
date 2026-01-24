@@ -376,7 +376,16 @@ for CURRENT_CONFIG in "${VALID_CONFIGS[@]}"; do
 # Display continue training info if enabled
 if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ]; then
     print_warning "=== CONTINUE TRAINING MODE ENABLED ==="
-    echo "  - Custom Weights: ${CUSTOM_WEIGHTS_PATH:-NOT SET}"
+    if [ "${AUTO_DETECT_LATEST:-false}" = true ]; then
+        echo "  - Mode: AUTO-DETECT LATEST"
+        echo "  - Search Dir: ${AUTO_DETECT_SEARCH_DIR:-NOT SET}"
+        echo "  - Dataset Filter: ${AUTO_DETECT_DATASET_FILTER:-any}"
+        echo "  - Model Filter: ${AUTO_DETECT_MODEL_FILTER:-any}"
+        echo "  - Prefer: ${PREFER_LAST_PT:-false}" | sed 's/true/last.pt/;s/false/best.pt/'
+    else
+        echo "  - Mode: MANUAL PATH"
+        echo "  - Custom Weights: ${CUSTOM_WEIGHTS_PATH:-NOT SET}"
+    fi
     echo "  - Additional Epochs: ${ADDITIONAL_EPOCHS_LIST[*]:-NOT SET}"
     echo ""
 fi
@@ -500,17 +509,56 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     # =========================================================================
     # CONTINUE TRAINING MODE: Use custom weights if enabled
     # =========================================================================
-    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ -n "${CUSTOM_WEIGHTS_PATH:-}" ]; then
-        if [ -f "${CUSTOM_WEIGHTS_PATH}" ]; then
-            YOLO_MODEL_PATH="${CUSTOM_WEIGHTS_PATH}"
-            # Extract base model name from custom weights path for naming
-            CUSTOM_WEIGHTS_BASENAME=$(basename "${CUSTOM_WEIGHTS_PATH}" .pt)
-            # Remove _best or _last suffix if present
-            MODEL_NAME=$(echo "${CUSTOM_WEIGHTS_BASENAME}" | sed 's/_best$//' | sed 's/_last$//')
-            MODEL_NAME="${MODEL_NAME}_cont"  # Add suffix to indicate continued training
-            print_info "Continuing training from: ${CUSTOM_WEIGHTS_PATH}"
+    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ]; then
+        EFFECTIVE_WEIGHTS_PATH=""
+        DETECTED_BASE_MODEL=""
+        
+        # Auto-detect latest model if enabled
+        if [ "${AUTO_DETECT_LATEST:-false}" = true ]; then
+            print_info "Auto-detecting latest trained model..."
+            EFFECTIVE_WEIGHTS_PATH=$(find_latest_trained_model \
+                "${AUTO_DETECT_SEARCH_DIR:-${OUTPUT_DIR}}" \
+                "${AUTO_DETECT_DATASET_FILTER:-}" \
+                "${AUTO_DETECT_MODEL_FILTER:-}" \
+                "${PREFER_LAST_PT:-false}")
+            
+            if [ -n "${EFFECTIVE_WEIGHTS_PATH}" ] && [ -f "${EFFECTIVE_WEIGHTS_PATH}" ]; then
+                print_success "Auto-detected: ${EFFECTIVE_WEIGHTS_PATH}"
+            else
+                print_warning "No trained model found in: ${AUTO_DETECT_SEARCH_DIR:-${OUTPUT_DIR}}"
+                print_warning "Falling back to manual path or standard model"
+                EFFECTIVE_WEIGHTS_PATH="${CUSTOM_WEIGHTS_PATH:-}"
+            fi
         else
-            print_error "Custom weights not found: ${CUSTOM_WEIGHTS_PATH}"
+            EFFECTIVE_WEIGHTS_PATH="${CUSTOM_WEIGHTS_PATH:-}"
+        fi
+        
+        if [ -n "${EFFECTIVE_WEIGHTS_PATH}" ] && [ -f "${EFFECTIVE_WEIGHTS_PATH}" ]; then
+            YOLO_MODEL_PATH="${EFFECTIVE_WEIGHTS_PATH}"
+            
+            # Extract just the base model architecture (e.g., yolov8x) to avoid duplicate prefixes
+            CUSTOM_WEIGHTS_BASENAME=$(basename "${EFFECTIVE_WEIGHTS_PATH}" .pt)
+            # Remove _best or _last suffix if present
+            CUSTOM_WEIGHTS_BASENAME=$(echo "${CUSTOM_WEIGHTS_BASENAME}" | sed 's/_best$//' | sed 's/_last$//')
+            
+            # Extract the base model (e.g., yolov8x) from the full experiment name
+            DETECTED_BASE_MODEL=$(extract_base_model_from_exp_name "${CUSTOM_WEIGHTS_BASENAME}")
+            
+            if [ -n "${DETECTED_BASE_MODEL}" ]; then
+                MODEL_NAME="${DETECTED_BASE_MODEL}"
+            else
+                # Fallback to just adding _cont suffix (may still cause issues)
+                MODEL_NAME="${CUSTOM_WEIGHTS_BASENAME}_cont"
+            fi
+            
+            # Get continue number for dynamic naming
+            BASE_PATTERN="${DATASET_NAME}_${MODEL_NAME}"
+            CONTINUE_NUM=$(get_next_continue_number "${OUTPUT_DIR}" "${BASE_PATTERN}")
+            
+            print_info "Continuing training from: ${YOLO_MODEL_PATH}"
+            print_info "Base model: ${MODEL_NAME}, Continue iteration: ${CONTINUE_NUM}"
+        else
+            print_error "Custom weights not found: ${EFFECTIVE_WEIGHTS_PATH:-NOT SET}"
             print_warning "Falling back to standard model: ${YOLO_MODEL}"
             if [ -f "${WEIGHTS_DIR}/${YOLO_MODEL}" ]; then
                 YOLO_MODEL_PATH="${WEIGHTS_DIR}/${YOLO_MODEL}"
@@ -518,6 +566,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
                 YOLO_MODEL_PATH="${YOLO_MODEL}"
             fi
             MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
+            CONTINUE_NUM=0
         fi
     else
         # Standard mode: Check if model exists locally, otherwise will be downloaded
@@ -528,6 +577,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
         fi
         # Extract model name without extension for naming
         MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
+        CONTINUE_NUM=0
     fi
     
     # Use shared utility functions for consistent naming (from training_functions.sh)
@@ -536,8 +586,12 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     BALANCE_DISPLAY=$(get_balance_str "${CLASS_FOCUS_MODE}")
     
     # Create run identifier for tracking using unified naming scheme
-    # Format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}
-    RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
+    # Format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}[_contN]
+    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
+        RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}_cont${CONTINUE_NUM}"
+    else
+        RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
+    fi
     
     #===========================================================================
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
@@ -555,7 +609,14 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     
     # Generate experiment name with timestamp and parameters
     TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP" "$CLASS_FOCUS_MODE")
+    
+    # Use different naming for continued training to avoid prefix duplication
+    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
+        # Use the continue-specific naming function
+        EXP_NAME=$(generate_continue_exp_name "$DATASET_NAME" "$MODEL_NAME" "$COLOR_MODE" "$IMG_SIZE" "$CLASS_FOCUS_MODE" "$OPTIMIZER" "$EPOCHS" "$BATCH_SIZE" "$LR0" "$TIMESTAMP" "$CONTINUE_NUM")
+    else
+        EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP" "$CLASS_FOCUS_MODE")
+    fi
     
     #===========================================================================
     # INITIALIZE LOGGING FOR THIS RUN
@@ -574,7 +635,11 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     echo "Configuration:"
     echo "  - Dataset:    ${DATASET_NAME}"
     echo "  - Data:       ${DATA_YAML}"
-    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ]; then
+    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
+        echo "  - Mode:       CONTINUE TRAINING (iteration #${CONTINUE_NUM})"
+        echo "  - Base Model: ${MODEL_NAME}"
+        echo "  - Weights:    ${YOLO_MODEL_PATH}"
+    elif [ "${CONTINUE_FROM_CUSTOM:-false}" = true ]; then
         echo "  - Mode:       CONTINUE TRAINING (fine-tuning)"
         echo "  - Base Model: ${YOLO_MODEL_PATH}"
     else
@@ -795,5 +860,5 @@ print_info "Logs included in each training output folder"
 echo ""
 print_info "To compare models, check the training_stats.json in each experiment folder."
 echo ""
-print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}"
+print_info "Experiment naming format: {dataset}_{model}_{rgb|gray}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}[_contN]"
 echo ""

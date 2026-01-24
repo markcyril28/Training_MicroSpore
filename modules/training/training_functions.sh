@@ -105,6 +105,225 @@ generate_exp_name() {
 }
 
 #===============================================================================
+# CONTINUE TRAINING AUTO-DETECTION
+#===============================================================================
+
+# Auto-detect the latest trained model from an output directory
+# Searches for the most recently modified experiment folder with a best.pt or last.pt
+#
+# Usage: latest_model=$(find_latest_trained_model "/path/to/output" "Dataset_2" "yolov8x")
+# Args:
+#   $1 - output_dir: Base output directory to search
+#   $2 - dataset_pattern (optional): Filter by dataset name pattern
+#   $3 - model_pattern (optional): Filter by model name pattern
+#   $4 - prefer_last (optional): "true" to prefer last.pt, default prefers best.pt
+#
+# Returns: Full path to the latest .pt file, or empty string if not found
+find_latest_trained_model() {
+    local output_dir="$1"
+    local dataset_pattern="${2:-}"
+    local model_pattern="${3:-}"
+    local prefer_last="${4:-false}"
+    
+    if [ ! -d "${output_dir}" ]; then
+        echo ""
+        return 1
+    fi
+    
+    local latest_dir=""
+    local latest_time=0
+    
+    # Build search pattern
+    local search_pattern="*"
+    if [ -n "${dataset_pattern}" ]; then
+        search_pattern="${dataset_pattern}*"
+    fi
+    
+    # Find all experiment directories
+    while IFS= read -r dir; do
+        if [ -d "${dir}/weights" ]; then
+            # Check if model pattern matches (if specified)
+            if [ -n "${model_pattern}" ]; then
+                local dir_name
+                dir_name=$(basename "${dir}")
+                if ! echo "${dir_name}" | grep -q "${model_pattern}"; then
+                    continue
+                fi
+            fi
+            
+            # Get modification time of the weights directory
+            local mod_time
+            mod_time=$(stat -c %Y "${dir}/weights" 2>/dev/null || stat -f %m "${dir}/weights" 2>/dev/null || echo "0")
+            
+            if [ "${mod_time}" -gt "${latest_time}" ]; then
+                # Verify there's actually a .pt file
+                if find "${dir}/weights" -maxdepth 1 -name "*.pt" -type f 2>/dev/null | grep -q .; then
+                    latest_time="${mod_time}"
+                    latest_dir="${dir}"
+                fi
+            fi
+        fi
+    done < <(find "${output_dir}" -maxdepth 2 -type d -name "${search_pattern}" 2>/dev/null)
+    
+    if [ -z "${latest_dir}" ]; then
+        echo ""
+        return 1
+    fi
+    
+    # Return the appropriate .pt file
+    local weights_dir="${latest_dir}/weights"
+    local pt_file=""
+    
+    if [ "${prefer_last}" = "true" ]; then
+        # Prefer last.pt
+        pt_file=$(find "${weights_dir}" -maxdepth 1 -name "*_last.pt" -type f 2>/dev/null | head -1)
+        if [ -z "${pt_file}" ]; then
+            pt_file=$(find "${weights_dir}" -maxdepth 1 -name "*_best.pt" -type f 2>/dev/null | head -1)
+        fi
+    else
+        # Prefer best.pt
+        pt_file=$(find "${weights_dir}" -maxdepth 1 -name "*_best.pt" -type f 2>/dev/null | head -1)
+        if [ -z "${pt_file}" ]; then
+            pt_file=$(find "${weights_dir}" -maxdepth 1 -name "*_last.pt" -type f 2>/dev/null | head -1)
+        fi
+    fi
+    
+    echo "${pt_file}"
+    return 0
+}
+
+# Extract the base model architecture from a continued training experiment name
+# This handles the nested naming to extract just the core model (e.g., yolov8x)
+#
+# Usage: base_model=$(extract_base_model_from_exp_name "Dataset_2_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400_cont")
+# Returns: yolov8x (or the original model name without dataset prefix)
+extract_base_model_from_exp_name() {
+    local exp_name="$1"
+    
+    # Pattern: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}[_cont]
+    # We need to extract the model part
+    
+    # Remove _cont suffix if present
+    local clean_name
+    clean_name=$(echo "${exp_name}" | sed 's/_cont$//')
+    
+    # Extract model using regex - model is after first dataset part and before _rgb/_gray
+    # Model names: yolov5nu, yolov8x, yolo11x, etc.
+    local model
+    model=$(echo "${clean_name}" | grep -oE '(yolov?[0-9]+[a-z]*|yolo[0-9]+[a-z]*)' | head -1)
+    
+    if [ -n "${model}" ]; then
+        echo "${model}"
+    else
+        # Fallback: return the input without common prefixes
+        echo "${exp_name}"
+    fi
+}
+
+# Extract parameters from an experiment name for continued training
+# Returns: associative array-like output with key:value pairs
+#
+# Usage: params=$(parse_exp_name_params "Dataset_2_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400")
+parse_exp_name_params() {
+    local exp_name="$1"
+    
+    # Remove _cont suffix if present
+    local clean_name
+    clean_name=$(echo "${exp_name}" | sed 's/_cont$//')
+    
+    # Extract components using regex patterns
+    local model color img_size balance optimizer epochs batch lr timestamp
+    
+    model=$(echo "${clean_name}" | grep -oE '(yolov?[0-9]+[a-z]*|yolo[0-9]+[a-z]*)' | head -1)
+    
+    if echo "${clean_name}" | grep -q "_gray_"; then
+        color="gray"
+    else
+        color="rgb"
+    fi
+    
+    img_size=$(echo "${clean_name}" | grep -oE 'img[0-9]+' | sed 's/img//' | head -1)
+    balance=$(echo "${clean_name}" | grep -oE 'bal-[a-z]+' | head -1)
+    optimizer=$(echo "${clean_name}" | grep -oE '(auto|SGD|Adam|AdamW|NAdam|RAdam)' | head -1)
+    epochs=$(echo "${clean_name}" | grep -oE 'e[0-9]+' | sed 's/e//' | head -1)
+    batch=$(echo "${clean_name}" | grep -oE 'b[0-9]+' | sed 's/b//' | head -1)
+    lr=$(echo "${clean_name}" | grep -oE 'lr[0-9_]+' | sed 's/lr//' | head -1)
+    timestamp=$(echo "${clean_name}" | grep -oE '[0-9]{8}_[0-9]{6}' | tail -1)
+    
+    echo "model:${model}"
+    echo "color:${color}"
+    echo "img_size:${img_size}"
+    echo "balance:${balance}"
+    echo "optimizer:${optimizer}"
+    echo "epochs:${epochs}"
+    echo "batch:${batch}"
+    echo "lr:${lr}"
+    echo "timestamp:${timestamp}"
+}
+
+# Generate continued training experiment name
+# This creates a clean name for continued training without duplicating the dataset prefix
+#
+# Usage: new_name=$(generate_continue_exp_name "base_model" "color" "img_size" "balance" "optimizer" "epochs" "batch" "lr" "timestamp" "continue_number")
+generate_continue_exp_name() {
+    local dataset_name="$1"
+    local base_model="$2"
+    local color_mode="$3"
+    local img_size="$4"
+    local class_focus_mode="$5"
+    local optimizer="$6"
+    local epochs="$7"
+    local batch_size="$8"
+    local lr0="$9"
+    local timestamp="${10}"
+    local continue_num="${11:-1}"
+    
+    # Format LR0 for filename (remove decimal point)
+    local lr0_str
+    lr0_str=$(format_lr_for_filename "${lr0}")
+    
+    # Get color mode indicator
+    local color_str
+    color_str=$(get_color_mode_str "${color_mode}")
+    
+    # Get class focus mode indicator
+    local balance_str
+    balance_str=$(get_balance_str "${class_focus_mode}")
+    
+    # Create continued training name with _contN suffix
+    # Format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}_contN
+    echo "${dataset_name}_${base_model}_${color_str}_img${img_size}_${balance_str}_${optimizer}_e${epochs}_b${batch_size}_lr${lr0_str}_${timestamp}_cont${continue_num}"
+}
+
+# Count existing continue runs for a given base experiment
+# Returns the next continue number to use
+#
+# Usage: next_num=$(get_next_continue_number "/path/to/output" "Dataset_2_yolov8x_gray_img1280")
+get_next_continue_number() {
+    local output_dir="$1"
+    local base_pattern="$2"
+    
+    if [ ! -d "${output_dir}" ]; then
+        echo "1"
+        return
+    fi
+    
+    local max_num=0
+    while IFS= read -r dir; do
+        local dir_name
+        dir_name=$(basename "${dir}")
+        # Extract _contN suffix
+        local cont_num
+        cont_num=$(echo "${dir_name}" | grep -oE '_cont[0-9]+$' | sed 's/_cont//')
+        if [ -n "${cont_num}" ] && [ "${cont_num}" -gt "${max_num}" ]; then
+            max_num="${cont_num}"
+        fi
+    done < <(find "${output_dir}" -maxdepth 1 -type d -name "${base_pattern}*_cont*" 2>/dev/null)
+    
+    echo $((max_num + 1))
+}
+
+#===============================================================================
 # TRAINING EXISTENCE CHECK
 #===============================================================================
 
