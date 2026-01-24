@@ -316,7 +316,7 @@ class Trainer:
     def _load_checkpoint(self, path: str) -> None:
         """Load training state from checkpoint."""
         print(f"Resuming from {path}")
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(path, map_location=self.device, weights_only=True)
 
         # Handle state_dict from compiled models (torch.compile adds "_orig_mod." prefix)
         state_dict = checkpoint['model_state_dict']
