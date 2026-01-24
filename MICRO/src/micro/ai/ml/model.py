@@ -189,7 +189,8 @@ def load_model(path: str, device: torch.device = None) -> MoveScorerNet:
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    checkpoint = torch.load(path, map_location=device)
+    # weights_only=False needed for checkpoint dicts; safe since we control the saved files
+    checkpoint = torch.load(path, map_location=device, weights_only=False)
 
     # Handle different checkpoint formats
     if 'model_state_dict' in checkpoint:
