@@ -40,8 +40,8 @@ COMPILE_MODEL=true               # Set to true to use torch.compile for faster t
 # -----------------------------------------------------------------------------
 # Self-play Settings
 # -----------------------------------------------------------------------------
-CPU_WORKERS=28                   # 32 threads - leave 4 for system/dataloader overhead
-SELFPLAY_GAMES=200               # More games per iteration with powerful MI210
+CPU_WORKERS=32                   # 32 threads - leave 4 for system/dataloader overhead
+SELFPLAY_GAMES=500               # Large experience buffer leveraging server RAM
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard,self"  # Comma-separated difficulties to cycle through
@@ -58,12 +58,13 @@ LEARNING_RATE=6e-4               # Higher LR with larger batch for faster conver
 WEIGHT_DECAY=1e-5                # Weight decay for regularization (0 to disable)
 GRAD_CLIP_NORM=1.0               # Gradient clipping norm (empty to disable)
 TRAIN_STEPS=1000000000           # Total training steps (empty = train indefinitely)
-CHECKPOINT_EVERY=50000           # More frequent checkpoints for safety
+CHECKPOINT_EVERY=100000           # More frequent checkpoints for safety
 
 # -----------------------------------------------------------------------------
 # DataLoader Settings
 # -----------------------------------------------------------------------------
-DATALOADER_WORKERS=8             # More workers with 32 CPU threads available
+DATALOADER_WORKERS=12            # High prefetch workers leveraging large RAM
+PREFETCH_FACTOR=4                # Prefetch batches per worker (default is 2)
 PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 
 # -----------------------------------------------------------------------------
@@ -83,7 +84,7 @@ RESUME_LATEST=true               # Set to true to resume from latest checkpoint 
 # -----------------------------------------------------------------------------
 # Time-based Stopping
 # -----------------------------------------------------------------------------
-TRAIN_DURATION=""                # Train for this duration (empty = no limit)
+TRAIN_DURATION="12h"                # Train for this duration (empty = no limit)
                                  # Examples: "2d" (2 days), "4h" (4 hours), "30m" (30 min), "1d12h" (1 day 12 hours)
 
 # =============================================================================
@@ -158,6 +159,7 @@ ARGS+=" --checkpoint-every ${CHECKPOINT_EVERY}"
 
 # DataLoader settings
 ARGS+=" --dataloader-workers ${DATALOADER_WORKERS}"
+ARGS+=" --prefetch-factor ${PREFETCH_FACTOR}"
 if [ "$PIN_MEMORY" = true ]; then
     ARGS+=" --pin-memory"
 fi
@@ -216,6 +218,7 @@ echo "    Checkpoint:        every ${CHECKPOINT_EVERY} steps"
 echo ""
 echo "  [DataLoader Settings]"
 echo "    Workers:           ${DATALOADER_WORKERS}"
+echo "    Prefetch Factor:   ${PREFETCH_FACTOR}"
 echo "    Pin Memory:        $([ "$PIN_MEMORY" = true ] && echo "enabled" || echo "disabled")"
 echo ""
 echo "  [Model Testing]"
