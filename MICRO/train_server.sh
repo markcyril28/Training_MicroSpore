@@ -105,7 +105,7 @@ LOG_TIMESTAMP="$(date +"%Y%m%d_%H%M%S")"
 LOG_FILE="${LOG_DIR}/console_${LOG_TIMESTAMP}.txt"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "=== Filipino Micro - ML Training ==="
+echo "=== Micro - ML Training ==="
 echo ""
 
 # Verify ROCm/HIP is available
