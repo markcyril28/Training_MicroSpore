@@ -59,7 +59,7 @@ LEARNING_RATE=6e-4               # Higher LR with larger batch for faster conver
 WEIGHT_DECAY=1e-5                # Weight decay for regularization (0 to disable)
 GRAD_CLIP_NORM=1.0               # Gradient clipping norm (empty to disable)
 TRAIN_STEPS=1000000000           # Total training steps (empty = train indefinitely)
-CHECKPOINT_EVERY=100000           # More frequent checkpoints for safety
+CHECKPOINT_EVERY=10000           # More frequent checkpoints for safety
 
 # -----------------------------------------------------------------------------
 # DataLoader Settings
