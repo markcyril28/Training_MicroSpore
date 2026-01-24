@@ -6,7 +6,7 @@
 #   Architecture: gfx90a (CDNA2)
 #   Driver: amdgpu
 #   Compute Platform: ROCm 6.x
-#   CPU Threads: 64
+#   CPU Threads: 72
 
 #===============================================================================
 # YOLO VERSION SELECTION
@@ -182,8 +182,8 @@ WORKERS_LIST=(
     # 2                     # low CPU
     # 4                     # standard
     # 8                     # moderate (balanced for data loading)
-    16                      # server with 32 threads (optimal: ~half of available threads)
-    # 32                    # maximum (use all threads - may cause contention)
+    #16                      # server with 32 threads (optimal: ~half of available threads)
+    32                    # maximum (use all threads - may cause contention)
 )
 
 # Learning Rate & Optimizer
@@ -195,16 +195,16 @@ WORKERS_LIST=(
 # OPTIMIZER:    SGD=stable, Adam/AdamW=faster convergence, auto=recommended
 LR0_LIST=(
     # For continued training, use LOWER learning rates (10-100x lower):
-    0.0001                  # recommended for fine-tuning (10x lower)
-    # 0.00005               # very fine-tuning (20x lower)
-    # 0.00001               # ultra fine-tuning (100x lower) - for grokking
     # 0.001                 # original training LR (too high for fine-tuning)
+    #0.0001                  # recommended for fine-tuning (10x lower)
+    0.00005               # very fine-tuning (20x lower)
+    # 0.00001               # ultra fine-tuning (100x lower) - for grokking
 )
 
 LRF_LIST=(
-    # 0.001                 # very low final LR
+    #0.1                   # higher final LR
     0.01                    # standard final LR ratio
-    # 0.1                   # higher final LR
+    #0.001                 # very low final LR
 )
 
 MOMENTUM_LIST=(
@@ -376,9 +376,9 @@ MOSAIC_LIST=(
 )
 
 MIXUP_LIST=(
-    0.0                     # no mixup
-    # 0.1                   # light mixup
-    # 0.5                   # moderate mixup
+    #0.0                     # no mixup
+    0.1                   # light mixup
+    #0.5
 )
 
 COPY_PASTE_LIST=(
@@ -445,8 +445,8 @@ IOU_THRESHOLD_LIST=(
 # Label Smoothing (regularization technique)
 # ─────────────────────────────────────────────────────────────────────────────
 LABEL_SMOOTHING_LIST=(
-    0.0                     # no label smoothing
-    # 0.1                   # light label smoothing
+    #0.0                     # no label smoothing
+    0.1                   # light label smoothing
 )
 
 # Close Mosaic (disable mosaic augmentation near end of training)
