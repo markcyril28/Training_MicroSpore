@@ -7,6 +7,5 @@ dependencies:
   - pip
   - numpy
   - pip:
-    - pyqt6
     - pyyaml
-    # PyTorch with CUDA is installed separately via setup_conda.sh
+    # PyTorch with ROCm is installed separately via setup_conda_server.sh
