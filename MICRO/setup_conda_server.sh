@@ -40,7 +40,7 @@ INSTALL_MATPLOTLIB=true          # Install matplotlib for plotting
 # END OF CONFIGURATION
 # =============================================================================
 
-echo "=== Filipino Micro - Conda Environment Setup ==="
+echo "=== Micro - Conda Environment Setup ==="
 echo ""
 
 # Determine which package manager to use (mamba > conda)

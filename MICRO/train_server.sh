@@ -7,10 +7,11 @@ set -euo pipefail
 # SERVER SPECS (Dell Server with AMD ROCm):
 #   GPU: AMD Instinct MI210 (Aldebaran/MI200)
 #   VRAM: 64GB HBM2e
+#   RAM: 1TB DDR4
 #   Architecture: gfx90a (CDNA2)
 #   Driver: amdgpu
 #   Compute Platform: ROCm 6.x
-#   CPU Threads: 32
+#   CPU Threads: 72
 #===============================================================================
 
 : << 'SERVER_SPECS'
@@ -40,15 +41,15 @@ COMPILE_MODEL=true               # Set to true to use torch.compile for faster t
 # -----------------------------------------------------------------------------
 # Self-play Settings
 # -----------------------------------------------------------------------------
-CPU_WORKERS=32                   # 32 threads - leave 4 for system/dataloader overhead
-SELFPLAY_GAMES=500               # Large experience buffer leveraging server RAM
+CPU_WORKERS=64                   # 72 threads - leave 16 for dataloader workers
+SELFPLAY_GAMES=976              # Massive experience buffer leveraging 1TB RAM
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard,self"  # Comma-separated difficulties to cycle through
                                                # Options: "easy", "medium", "hard", "self" (AI model)
                                                # Use single value for fixed difficulty, or multiple to alternate
 NOISE_PROB=0.15                  # Slightly lower noise for faster convergence
-MAX_MOVES_PER_GAME=150           # Shorter games = faster data generation
+MAX_MOVES_PER_GAME=200           # Max moves per game (default)
 
 # -----------------------------------------------------------------------------
 # Training Settings
@@ -63,8 +64,7 @@ CHECKPOINT_EVERY=100000           # More frequent checkpoints for safety
 # -----------------------------------------------------------------------------
 # DataLoader Settings
 # -----------------------------------------------------------------------------
-DATALOADER_WORKERS=12            # High prefetch workers leveraging large RAM
-PREFETCH_FACTOR=4                # Prefetch batches per worker (default is 2)
+DATALOADER_WORKERS=16            # High worker count leveraging 1TB RAM
 PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 
 # -----------------------------------------------------------------------------
@@ -84,7 +84,7 @@ RESUME_LATEST=true               # Set to true to resume from latest checkpoint 
 # -----------------------------------------------------------------------------
 # Time-based Stopping
 # -----------------------------------------------------------------------------
-TRAIN_DURATION="12h"                # Train for this duration (empty = no limit)
+TRAIN_DURATION="8h"                # Train for this duration (empty = no limit)
                                  # Examples: "2d" (2 days), "4h" (4 hours), "30m" (30 min), "1d12h" (1 day 12 hours)
 
 # =============================================================================
@@ -159,7 +159,6 @@ ARGS+=" --checkpoint-every ${CHECKPOINT_EVERY}"
 
 # DataLoader settings
 ARGS+=" --dataloader-workers ${DATALOADER_WORKERS}"
-ARGS+=" --prefetch-factor ${PREFETCH_FACTOR}"
 if [ "$PIN_MEMORY" = true ]; then
     ARGS+=" --pin-memory"
 fi
@@ -218,7 +217,6 @@ echo "    Checkpoint:        every ${CHECKPOINT_EVERY} steps"
 echo ""
 echo "  [DataLoader Settings]"
 echo "    Workers:           ${DATALOADER_WORKERS}"
-echo "    Prefetch Factor:   ${PREFETCH_FACTOR}"
 echo "    Pin Memory:        $([ "$PIN_MEMORY" = true ] && echo "enabled" || echo "disabled")"
 echo ""
 echo "  [Model Testing]"

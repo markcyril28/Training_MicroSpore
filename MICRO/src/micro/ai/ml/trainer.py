@@ -158,7 +158,7 @@ class TrainingConfig:
     # Self-play settings
     cpu_workers: int = field(default_factory=lambda: max(2, (os.cpu_count() or 2)))
     selfplay_games: int = 500
-    selfplay_difficulty: str = 'medium'
+    selfplay_difficulties: list = field(default_factory=lambda: ['medium'])  # List of difficulties to cycle
     selfplay_focus_side: str = 'both'  # white, black, both
     selfplay_opponent_focus: str = 'both'  # ml, algorithm, both
     selfplay_noise_prob: float = 0.1  # Probability of random move for exploration
@@ -559,12 +559,28 @@ class Trainer:
             return _progress
 
         entries = 0
+        difficulties = self.config.selfplay_difficulties
+        num_difficulties = len(difficulties)
+
+        def get_difficulty_for_batch(batch_idx: int) -> str:
+            """Cycle through difficulties for each batch of games."""
+            diff = difficulties[batch_idx % num_difficulties]
+            # 'self' means ML self-play, use 'medium' as base difficulty
+            return 'medium' if diff == 'self' else diff
+
+        def is_self_play_batch(batch_idx: int) -> bool:
+            """Check if this batch should be ML self-play."""
+            return difficulties[batch_idx % num_difficulties] == 'self'
+
+        # Log difficulties being used
+        print(f"  Cycling through difficulties: {difficulties}")
 
         if ml_self_games > 0:
+            # For ML self-play, use medium difficulty as base
             runner = SelfPlayRunner(
                 replay_buffer=self.replay_buffer,
                 num_workers=self.config.cpu_workers,
-                difficulty=self.config.selfplay_difficulty,
+                difficulty='medium',
                 max_moves=self.config.selfplay_max_moves,
                 noise_prob=self.config.selfplay_noise_prob,
                 p1_policy='ml',
@@ -586,35 +602,52 @@ class Trainer:
                 ml_as_p1 = vs_algo_games // 2
                 ml_as_p2 = vs_algo_games - ml_as_p1
 
+            # Split games across difficulties (excluding 'self' which is handled separately)
+            algo_difficulties = [d for d in difficulties if d != 'self']
+            if not algo_difficulties:
+                algo_difficulties = ['medium']
+
             if ml_as_p1 > 0:
-                runner = SelfPlayRunner(
-                    replay_buffer=self.replay_buffer,
-                    num_workers=self.config.cpu_workers,
-                    difficulty=self.config.selfplay_difficulty,
-                    max_moves=self.config.selfplay_max_moves,
-                    noise_prob=self.config.selfplay_noise_prob,
-                    p1_policy='ml',
-                    p2_policy='algorithmic',
-                    model_path=str(temp_model_path),
-                    device=self.device,
-                )
-                entries += runner.run_games(ml_as_p1, callback=make_progress(completed_total))
-                completed_total += ml_as_p1
+                games_per_diff = ml_as_p1 // len(algo_difficulties)
+                remainder = ml_as_p1 % len(algo_difficulties)
+                
+                for i, diff in enumerate(algo_difficulties):
+                    games_this_diff = games_per_diff + (1 if i < remainder else 0)
+                    if games_this_diff > 0:
+                        runner = SelfPlayRunner(
+                            replay_buffer=self.replay_buffer,
+                            num_workers=self.config.cpu_workers,
+                            difficulty=diff,
+                            max_moves=self.config.selfplay_max_moves,
+                            noise_prob=self.config.selfplay_noise_prob,
+                            p1_policy='ml',
+                            p2_policy='algorithmic',
+                            model_path=str(temp_model_path),
+                            device=self.device,
+                        )
+                        entries += runner.run_games(games_this_diff, callback=make_progress(completed_total))
+                        completed_total += games_this_diff
 
             if ml_as_p2 > 0:
-                runner = SelfPlayRunner(
-                    replay_buffer=self.replay_buffer,
-                    num_workers=self.config.cpu_workers,
-                    difficulty=self.config.selfplay_difficulty,
-                    max_moves=self.config.selfplay_max_moves,
-                    noise_prob=self.config.selfplay_noise_prob,
-                    p1_policy='algorithmic',
-                    p2_policy='ml',
-                    model_path=str(temp_model_path),
-                    device=self.device,
-                )
-                entries += runner.run_games(ml_as_p2, callback=make_progress(completed_total))
-                completed_total += ml_as_p2
+                games_per_diff = ml_as_p2 // len(algo_difficulties)
+                remainder = ml_as_p2 % len(algo_difficulties)
+                
+                for i, diff in enumerate(algo_difficulties):
+                    games_this_diff = games_per_diff + (1 if i < remainder else 0)
+                    if games_this_diff > 0:
+                        runner = SelfPlayRunner(
+                            replay_buffer=self.replay_buffer,
+                            num_workers=self.config.cpu_workers,
+                            difficulty=diff,
+                            max_moves=self.config.selfplay_max_moves,
+                            noise_prob=self.config.selfplay_noise_prob,
+                            p1_policy='algorithmic',
+                            p2_policy='ml',
+                            model_path=str(temp_model_path),
+                            device=self.device,
+                        )
+                        entries += runner.run_games(games_this_diff, callback=make_progress(completed_total))
+                        completed_total += games_this_diff
 
         print(f"Generated {entries} training entries")
         return entries
@@ -1030,9 +1063,8 @@ def main():
     parser.add_argument('--opponent-focus', type=str, default='both',
                        choices=['ml', 'algorithm', 'both'],
                        help='Opponent type to focus on during self-play')
-    parser.add_argument('--selfplay-difficulty', type=str, default='medium',
-                       choices=['easy', 'medium', 'hard'],
-                       help='AI difficulty level for self-play')
+    parser.add_argument('--selfplay-difficulties', type=str, default='medium',
+                       help='Comma-separated difficulties to cycle: easy,medium,hard,self')
     parser.add_argument('--noise-prob', type=float, default=0.1,
                        help='Probability of random move for exploration (0.0 to 1.0)')
     parser.add_argument('--max-moves', type=int, default=200,
@@ -1115,7 +1147,7 @@ def main():
         selfplay_games=args.selfplay_games,
         selfplay_focus_side=args.focus_side,
         selfplay_opponent_focus=args.opponent_focus,
-        selfplay_difficulty=args.selfplay_difficulty,
+        selfplay_difficulties=[d.strip() for d in args.selfplay_difficulties.split(',')],
         selfplay_noise_prob=args.noise_prob,
         selfplay_max_moves=args.max_moves,
         # Training settings
