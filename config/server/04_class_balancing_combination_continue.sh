@@ -140,10 +140,11 @@ EPOCHS_LIST=(
 )
 
 PATIENCE_LIST=(
-    100                     # reduced patience for fine-tuning (quicker early stop)
+    #100                     # reduced patience for fine-tuning (quicker early stop)
     # 50                    # aggressive early stopping
     # 200                   # moderate patience
     # 300                   # original patience (may be too long for fine-tuning)
+    500
 )
 
 BATCH_SIZE_LIST=(
