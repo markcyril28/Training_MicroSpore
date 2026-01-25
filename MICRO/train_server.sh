@@ -163,7 +163,7 @@ echo ""
 if [ "$RESUME_LATEST" = true ] && [ -z "$RESUME" ]; then
     echo "Checking checkpoints for corruption..."
     
-    VALID_CHECKPOINT=$(python3 << 'PYEOF'
+    VALID_CHECKPOINT=$(python3 -W ignore << 'PYEOF' 2>/dev/null | head -1
 import sys
 from pathlib import Path
 import torch
@@ -178,12 +178,12 @@ checkpoints = sorted(checkpoint_dir.glob("model_step_*.pt"),
 
 for ckpt in checkpoints:
     try:
-        c = torch.load(ckpt, map_location='cpu', weights_only=True)
+        c = torch.load(ckpt, map_location='cpu', weights_only=False)
         if 'model_state_dict' not in c:
             continue
         is_valid = all(torch.isfinite(p).all() for p in c['model_state_dict'].values())
         if is_valid:
-            print(ckpt)
+            print(str(ckpt))
             sys.exit(0)
     except:
         continue
