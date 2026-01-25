@@ -52,11 +52,11 @@ MAX_MOVES_PER_GAME=200           # Max moves per game
 # -----------------------------------------------------------------------------
 # Training Settings (Optimized for 64GB HBM2e VRAM)
 # -----------------------------------------------------------------------------
-BATCH_SIZE=4096                  # Balanced batch size for MI210
-LEARNING_RATE=7e-4               # Scaled with batch size (linear scaling rule)
+BATCH_SIZE=2048                  # Reduced to avoid HIPBLAS errors on MI210
+LEARNING_RATE=5e-4               # Scaled with batch size (linear scaling rule)
 WEIGHT_DECAY=1e-5                # Weight decay for regularization
 GRAD_CLIP_NORM=1.0               # Gradient clipping for stability with large batch
-TRAIN_STEPS=100000000000           # Total training steps
+TRAIN_STEPS=100000000000         # Total training steps
 CHECKPOINT_EVERY=5000            # More frequent checkpoints with faster training
 
 # -----------------------------------------------------------------------------
@@ -103,24 +103,27 @@ export HIP_FORCE_DEV_KERNARG=1
 export HSA_ENABLE_SDMA=0                    # Sometimes helps with MI210 stability
 export GPU_MAX_HW_QUEUES=8                  # More hardware queues for parallelism
 
-# MIOpen settings - use GEMM fallback to avoid rocBLAS errors
+# MIOpen settings - use writable cache in /tmp to avoid permission issues
 export MIOPEN_FIND_MODE=1                   # Normal mode (more stable than fast mode 3)
 export MIOPEN_DEBUG_CONV_GEMM=1             # Enable GEMM convolution path
 export MIOPEN_DEBUG_CONV_DIRECT=0           # Disable direct convolution (can cause issues)
 export MIOPEN_DEBUG_CONV_FFT=0              # Disable FFT convolution
 export MIOPEN_DEBUG_CONV_WINOGRAD=0         # Disable Winograd (can cause rocBLAS errors)
-export MIOPEN_CACHE_DIR="${PROJECT_DIR}/.miopen_cache"
+export MIOPEN_CACHE_DIR="/tmp/miopen_cache_${USER}"
+export MIOPEN_USER_DB_PATH="/tmp/miopen_cache_${USER}/user_db"
 export MIOPEN_LOG_LEVEL=4                   # Suppress MIOpen workspace allocation warnings
-export MIOPEN_USER_DB_PATH="${PROJECT_DIR}/.miopen_cache/user_db"
-mkdir -p "$MIOPEN_CACHE_DIR"
-mkdir -p "$MIOPEN_USER_DB_PATH"
+export MIOPEN_DISABLE_CACHE=0               # Enable caching (but in writable location)
+mkdir -p "$MIOPEN_CACHE_DIR" && chmod 755 "$MIOPEN_CACHE_DIR"
+mkdir -p "$MIOPEN_USER_DB_PATH" && chmod 755 "$MIOPEN_USER_DB_PATH"
 
-# rocBLAS settings
+# rocBLAS/hipBLAS settings - disable problematic backends
 export ROCBLAS_TENSILE_LIBPATH=/opt/rocm/lib/rocblas/library
 export ROCBLAS_LAYER=0                      # Disable rocBLAS logging
+export TORCH_BLAS_PREFER_HIPBLASLT=0        # Disable hipBLASLt (MI210 issues)
+export HIPBLASLT_LOG_MASK=0                 # Disable hipBLASLt logging
 
-# Disable hipBLASLt which can cause issues on MI210
-export TORCH_BLAS_PREFER_HIPBLASLT=0
+# Force PyTorch to use more stable BLAS backend
+export PYTORCH_HIP_ALLOC_CONF=max_split_size_mb:512
 
 # =============================================================================
 # torch.compile optimization - cache compiled models for faster subsequent runs
