@@ -42,14 +42,14 @@ COMPILE_MODEL=true               # Set to true to use torch.compile for faster t
 # Self-play Settings
 # -----------------------------------------------------------------------------
 CPU_WORKERS=32                   # 72 threads - leave 16 for dataloader workers
-SELFPLAY_GAMES=500              # Massive experience buffer leveraging 1TB RAM
+SELFPLAY_GAMES=512              # Massive experience buffer leveraging 1TB RAM
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard,self"  # Comma-separated difficulties to cycle through
                                                # Options: "easy", "medium", "hard", "self" (AI model)
                                                # Use single value for fixed difficulty, or multiple to alternate
 NOISE_PROB=0.15                  # Slightly lower noise for faster convergence
-MAX_MOVES_PER_GAME=200           # Max moves per game (default)
+MAX_MOVES_PER_GAME=150           # Max moves per game (default)
 
 # -----------------------------------------------------------------------------
 # Training Settings
