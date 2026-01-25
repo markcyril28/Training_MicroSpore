@@ -36,7 +36,7 @@ SERVER_SPECS
 # -----------------------------------------------------------------------------
 DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
 NO_AMP=false                     # ENABLED: MI210 has excellent FP16/BF16 support via ROCm
-COMPILE_MODEL=true               # torch.compile with reduce-overhead mode for faster training
+COMPILE_MODEL=false               # torch.compile with reduce-overhead mode for faster training
 
 # -----------------------------------------------------------------------------
 # Self-play Settings (Optimized for 72 CPU threads)
@@ -45,7 +45,7 @@ CPU_WORKERS=32                   # Use 56 of 72 threads for self-play (leave 16 
 SELFPLAY_GAMES=1024              # Double games - 1TB RAM can hold massive replay buffer
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
-SELFPLAY_DIFFICULTIES="easy,medium,hard,self"  # Comma-separated difficulties to cycle through
+SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
 NOISE_PROB=0.10                  # Lower noise for faster convergence with large batch
 MAX_MOVES_PER_GAME=150           # Max moves per game
 
