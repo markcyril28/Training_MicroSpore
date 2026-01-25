@@ -35,8 +35,8 @@ SERVER_SPECS
 # Device Settings
 # -----------------------------------------------------------------------------
 DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
-NO_AMP=false                     # ENABLED: MI210 has excellent FP16/BF16 support via ROCm
-COMPILE_MODEL=false               # torch.compile with reduce-overhead mode for faster training
+NO_AMP=true                      # DISABLED: MI210 can have gradient issues with AMP/GradScaler
+COMPILE_MODEL=false              # torch.compile with reduce-overhead mode for faster training
 
 # -----------------------------------------------------------------------------
 # Self-play Settings (Optimized for 72 CPU threads)
@@ -44,7 +44,7 @@ COMPILE_MODEL=false               # torch.compile with reduce-overhead mode for 
 CPU_WORKERS=32                   # Use 56 of 72 threads for self-play (leave 16 for system/dataloader)
 SELFPLAY_GAMES=1024              # Double games - 1TB RAM can hold massive replay buffer
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
-OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
+OPPONENT_FOCUS="algorithm"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
 NOISE_PROB=0.10                  # Lower noise for faster convergence with large batch
 MAX_MOVES_PER_GAME=150           # Max moves per game
@@ -104,6 +104,7 @@ export HSA_ENABLE_SDMA=0                    # Sometimes helps with MI210 stabili
 export GPU_MAX_HW_QUEUES=8                  # More hardware queues for parallelism
 export MIOPEN_FIND_MODE=3                   # Fast MIOpen kernel selection
 export MIOPEN_CACHE_DIR="${PROJECT_DIR}/.miopen_cache"
+export MIOPEN_LOG_LEVEL=4                   # Suppress MIOpen workspace allocation warnings
 mkdir -p "$MIOPEN_CACHE_DIR"
 
 # Enable TF32-like fast math for MI210 (matrix core acceleration)
