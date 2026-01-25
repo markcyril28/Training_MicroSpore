@@ -82,7 +82,7 @@ RESUME_LATEST=true               # Resume from latest checkpoint in models/check
 # -----------------------------------------------------------------------------
 # Time-based Stopping
 # -----------------------------------------------------------------------------
-TRAIN_DURATION="3h"              # Train for this duration
+TRAIN_DURATION="4h"              # Train for this duration
 
 # =============================================================================
 # END OF PARAMETERS - Do not edit below this line
