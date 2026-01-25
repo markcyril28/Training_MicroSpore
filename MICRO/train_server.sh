@@ -52,10 +52,10 @@ MAX_MOVES_PER_GAME=200           # Max moves per game
 # -----------------------------------------------------------------------------
 # Training Settings (Optimized for 64GB HBM2e VRAM)
 # -----------------------------------------------------------------------------
-BATCH_SIZE=2048                  # Reduced to avoid HIPBLAS errors on MI210
-LEARNING_RATE=5e-4               # Scaled with batch size (linear scaling rule)
+BATCH_SIZE=512                   # Small batch to avoid HIPBLAS errors on MI210
+LEARNING_RATE=2e-4               # Scaled with batch size (linear scaling rule)
 WEIGHT_DECAY=1e-5                # Weight decay for regularization
-GRAD_CLIP_NORM=1.0               # Gradient clipping for stability with large batch
+GRAD_CLIP_NORM=1.0               # Gradient clipping for stability
 TRAIN_STEPS=100000000000         # Total training steps
 CHECKPOINT_EVERY=5000            # More frequent checkpoints with faster training
 
@@ -98,28 +98,35 @@ export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 # =============================================================================
 # ROCm/MI210 Optimizations
 # =============================================================================
-# Enable HIP memory pool for faster allocations
+# Stability settings for MI210
 export HIP_FORCE_DEV_KERNARG=1
-export HSA_ENABLE_SDMA=0                    # Sometimes helps with MI210 stability
-export GPU_MAX_HW_QUEUES=8                  # More hardware queues for parallelism
+export HSA_ENABLE_SDMA=0                    # Disable SDMA for stability
+export GPU_MAX_HW_QUEUES=4                  # Reduce hardware queues
+export HIP_LAUNCH_BLOCKING=0                # Async launches (set to 1 to debug)
+export AMD_SERIALIZE_KERNEL=0               # Don't serialize (set to 3 to debug)
 
-# MIOpen settings - DISABLE cache to avoid permission/locking issues
-export MIOPEN_FIND_MODE=1                   # Normal mode (more stable than fast mode 3)
-export MIOPEN_DEBUG_CONV_GEMM=1             # Enable GEMM convolution path
-export MIOPEN_DEBUG_CONV_DIRECT=0           # Disable direct convolution (can cause issues)
+# MIOpen settings - use most conservative/stable options
+export MIOPEN_FIND_MODE=1                   # Normal find mode
+export MIOPEN_DEBUG_CONV_GEMM=0             # Disable GEMM convolution (can cause HIPBLAS errors)
+export MIOPEN_DEBUG_CONV_IMPLICIT_GEMM=1    # Use implicit GEMM instead
+export MIOPEN_DEBUG_CONV_DIRECT=1           # Enable direct convolution as fallback
 export MIOPEN_DEBUG_CONV_FFT=0              # Disable FFT convolution
-export MIOPEN_DEBUG_CONV_WINOGRAD=0         # Disable Winograd (can cause rocBLAS errors)
-export MIOPEN_DISABLE_CACHE=1               # DISABLE cache entirely to avoid file locking issues
-export MIOPEN_LOG_LEVEL=5                   # Only show fatal errors
+export MIOPEN_DEBUG_CONV_WINOGRAD=0         # Disable Winograd
+export MIOPEN_DISABLE_CACHE=1               # Disable cache to avoid file issues
+export MIOPEN_ENABLE_LOGGING=0              # Disable logging
+export MIOPEN_ENABLE_LOGGING_CMD=0          # Disable command logging
+export AMD_LOG_LEVEL=0                      # Disable AMD driver logging
 
-# rocBLAS/hipBLAS settings - disable problematic backends
+# rocBLAS/hipBLAS settings
 export ROCBLAS_TENSILE_LIBPATH=/opt/rocm/lib/rocblas/library
-export ROCBLAS_LAYER=0                      # Disable rocBLAS logging
-export TORCH_BLAS_PREFER_HIPBLASLT=0        # Disable hipBLASLt (MI210 issues)
+export ROCBLAS_LAYER=0                      # Disable logging
+export TORCH_BLAS_PREFER_HIPBLASLT=0        # Disable hipBLASLt
 export HIPBLASLT_LOG_MASK=0                 # Disable hipBLASLt logging
 
-# Force PyTorch to use more stable BLAS backend
-export PYTORCH_HIP_ALLOC_CONF=max_split_size_mb:512
+# PyTorch HIP settings
+export PYTORCH_HIP_ALLOC_CONF=max_split_size_mb:256
+export TORCH_USE_HIP_DSA=0                  # Disable device-side assertions
+export HIP_VISIBLE_DEVICES=0                # Use only first GPU
 
 # =============================================================================
 # torch.compile optimization - cache compiled models for faster subsequent runs
