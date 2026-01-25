@@ -42,7 +42,7 @@ COMPILE_MODEL=false              # torch.compile with reduce-overhead mode for f
 # Self-play Settings (Optimized for 72 CPU threads)
 # -----------------------------------------------------------------------------
 CPU_WORKERS=32                   # Use 56 of 72 threads for self-play (leave 16 for system/dataloader)
-SELFPLAY_GAMES=1024              # Double games - 1TB RAM can hold massive replay buffer
+SELFPLAY_GAMES=2048              # More games for larger replay buffer
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="algorithm"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
@@ -52,8 +52,8 @@ MAX_MOVES_PER_GAME=150           # Max moves per game
 # -----------------------------------------------------------------------------
 # Training Settings (Optimized for 64GB HBM2e VRAM)
 # -----------------------------------------------------------------------------
-BATCH_SIZE=8192                  # Larger batch - MI210 64GB can easily handle this
-LEARNING_RATE=1e-3               # Scale LR with batch size (linear scaling rule)
+BATCH_SIZE=4096                  # Balanced batch size for MI210
+LEARNING_RATE=7e-4               # Scaled with batch size (linear scaling rule)
 WEIGHT_DECAY=1e-5                # Weight decay for regularization
 GRAD_CLIP_NORM=1.0               # Gradient clipping for stability with large batch
 TRAIN_STEPS=1000000000           # Total training steps
@@ -156,6 +156,50 @@ python -c "import torch; assert torch.cuda.is_available(), 'ROCm/HIP not availab
 
 echo "ROCm/HIP verified (MI210 gfx90a). Starting training..."
 echo ""
+
+# =============================================================================
+# Auto-detect valid checkpoint (skip corrupted ones with NaN/Inf)
+# =============================================================================
+if [ "$RESUME_LATEST" = true ] && [ -z "$RESUME" ]; then
+    echo "Checking checkpoints for corruption..."
+    
+    VALID_CHECKPOINT=$(python3 << 'PYEOF'
+import sys
+from pathlib import Path
+import torch
+
+checkpoint_dir = Path("models/checkpoints")
+if not checkpoint_dir.exists():
+    sys.exit(0)
+
+checkpoints = sorted(checkpoint_dir.glob("model_step_*.pt"), 
+                     key=lambda p: int(p.stem.split('_')[-1]), 
+                     reverse=True)
+
+for ckpt in checkpoints:
+    try:
+        c = torch.load(ckpt, map_location='cpu', weights_only=True)
+        if 'model_state_dict' not in c:
+            continue
+        is_valid = all(torch.isfinite(p).all() for p in c['model_state_dict'].values())
+        if is_valid:
+            print(ckpt)
+            sys.exit(0)
+    except:
+        continue
+PYEOF
+)
+    
+    if [ -n "$VALID_CHECKPOINT" ]; then
+        echo "  Found valid checkpoint: $(basename "$VALID_CHECKPOINT")"
+        RESUME="$VALID_CHECKPOINT"
+        RESUME_LATEST=false
+    else
+        echo "  No valid checkpoints found. Starting fresh."
+        RESUME_LATEST=false
+    fi
+    echo ""
+fi
 
 # Build command arguments
 ARGS=""
