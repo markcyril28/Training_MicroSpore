@@ -98,6 +98,9 @@ export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 # =============================================================================
 # ROCm/MI210 Optimizations
 # =============================================================================
+# CRITICAL: Override GFX version to fix HIPBLAS issues on MI210
+export HSA_OVERRIDE_GFX_VERSION=9.0.0
+
 # Stability settings for MI210
 export HIP_FORCE_DEV_KERNARG=1
 export HSA_ENABLE_SDMA=0                    # Disable SDMA for stability
@@ -107,7 +110,7 @@ export AMD_SERIALIZE_KERNEL=0               # Don't serialize (set to 3 to debug
 
 # MIOpen settings - use most conservative/stable options
 export MIOPEN_FIND_MODE=1                   # Normal find mode
-export MIOPEN_DEBUG_CONV_GEMM=0             # Disable GEMM convolution (can cause HIPBLAS errors)
+export MIOPEN_DEBUG_CONV_GEMM=0             # Disable GEMM convolution
 export MIOPEN_DEBUG_CONV_IMPLICIT_GEMM=1    # Use implicit GEMM instead
 export MIOPEN_DEBUG_CONV_DIRECT=1           # Enable direct convolution as fallback
 export MIOPEN_DEBUG_CONV_FFT=0              # Disable FFT convolution
