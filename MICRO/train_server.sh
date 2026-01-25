@@ -47,7 +47,7 @@ FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="algorithm"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
 NOISE_PROB=0.10                  # Lower noise for faster convergence with large batch
-MAX_MOVES_PER_GAME=150           # Max moves per game
+MAX_MOVES_PER_GAME=200           # Max moves per game
 
 # -----------------------------------------------------------------------------
 # Training Settings (Optimized for 64GB HBM2e VRAM)
@@ -56,7 +56,7 @@ BATCH_SIZE=4096                  # Balanced batch size for MI210
 LEARNING_RATE=7e-4               # Scaled with batch size (linear scaling rule)
 WEIGHT_DECAY=1e-5                # Weight decay for regularization
 GRAD_CLIP_NORM=1.0               # Gradient clipping for stability with large batch
-TRAIN_STEPS=1000000000           # Total training steps
+TRAIN_STEPS=100000000000           # Total training steps
 CHECKPOINT_EVERY=5000            # More frequent checkpoints with faster training
 
 # -----------------------------------------------------------------------------
