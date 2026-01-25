@@ -28,7 +28,7 @@ GPU[0]          : Average Graphics Package Power (W): 42.0
 SERVER_SPECS
 
 # =============================================================================
-# TRAINING PARAMETERS - Edit these values as needed
+# TRAINING PARAMETERS - Optimized for MI210 64GB + 72 CPU + 1TB RAM
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -36,56 +36,53 @@ SERVER_SPECS
 # -----------------------------------------------------------------------------
 DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
 NO_AMP=false                     # ENABLED: MI210 has excellent FP16/BF16 support via ROCm
-COMPILE_MODEL=true               # Set to true to use torch.compile for faster training
+COMPILE_MODEL=true               # torch.compile with reduce-overhead mode for faster training
 
 # -----------------------------------------------------------------------------
-# Self-play Settings
+# Self-play Settings (Optimized for 72 CPU threads)
 # -----------------------------------------------------------------------------
-CPU_WORKERS=32                   # 72 threads - leave 16 for dataloader workers
-SELFPLAY_GAMES=512              # Massive experience buffer leveraging 1TB RAM
+CPU_WORKERS=32                   # Use 56 of 72 threads for self-play (leave 16 for system/dataloader)
+SELFPLAY_GAMES=1024              # Double games - 1TB RAM can hold massive replay buffer
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard,self"  # Comma-separated difficulties to cycle through
-                                               # Options: "easy", "medium", "hard", "self" (AI model)
-                                               # Use single value for fixed difficulty, or multiple to alternate
-NOISE_PROB=0.15                  # Slightly lower noise for faster convergence
-MAX_MOVES_PER_GAME=150           # Max moves per game (default)
+NOISE_PROB=0.10                  # Lower noise for faster convergence with large batch
+MAX_MOVES_PER_GAME=150           # Max moves per game
 
 # -----------------------------------------------------------------------------
-# Training Settings
+# Training Settings (Optimized for 64GB HBM2e VRAM)
 # -----------------------------------------------------------------------------
-BATCH_SIZE=4096                  # Large batch leveraging 64GB HBM2e VRAM
-LEARNING_RATE=6e-4               # Higher LR with larger batch for faster convergence
-WEIGHT_DECAY=1e-5                # Weight decay for regularization (0 to disable)
-GRAD_CLIP_NORM=1.0               # Gradient clipping norm (empty to disable)
-TRAIN_STEPS=1000000000           # Total training steps (empty = train indefinitely)
-CHECKPOINT_EVERY=10000           # More frequent checkpoints for safety
+BATCH_SIZE=8192                  # Larger batch - MI210 64GB can easily handle this
+LEARNING_RATE=1e-3               # Scale LR with batch size (linear scaling rule)
+WEIGHT_DECAY=1e-5                # Weight decay for regularization
+GRAD_CLIP_NORM=1.0               # Gradient clipping for stability with large batch
+TRAIN_STEPS=1000000000           # Total training steps
+CHECKPOINT_EVERY=5000            # More frequent checkpoints with faster training
 
 # -----------------------------------------------------------------------------
-# DataLoader Settings
+# DataLoader Settings (Optimized for 72 CPU + 1TB RAM)
 # -----------------------------------------------------------------------------
-DATALOADER_WORKERS=16            # High worker count leveraging 1TB RAM
+DATALOADER_WORKERS=12            # 12 workers is optimal for this batch size
 PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 
 # -----------------------------------------------------------------------------
 # Model Testing Settings (ML vs Algorithm)
 # -----------------------------------------------------------------------------
 TEST_VS_ALGO=true                # Enable periodic testing against algorithm
-TEST_EVERY=50000                # Less frequent testing = more time training
-TEST_GAMES=30                    # Fewer test games for faster evaluation
-TEST_DIFFICULTY="medium"           # Algorithm difficulty for testing: "easy", "medium", "hard"
+TEST_EVERY=25000                 # Test more frequently to track progress
+TEST_GAMES=50                    # More test games for reliable metrics
+TEST_DIFFICULTY="medium"         # Algorithm difficulty for testing
 
 # -----------------------------------------------------------------------------
 # Resume Settings
 # -----------------------------------------------------------------------------
-RESUME=""                        # Path to checkpoint to resume from (leave empty to start fresh)
-RESUME_LATEST=true               # Set to true to resume from latest checkpoint in models/checkpoints/
+RESUME=""                        # Path to checkpoint to resume from
+RESUME_LATEST=true               # Resume from latest checkpoint in models/checkpoints/
 
 # -----------------------------------------------------------------------------
 # Time-based Stopping
 # -----------------------------------------------------------------------------
-TRAIN_DURATION="3h"                # Train for this duration (empty = no limit)
-                                 # Examples: "2d" (2 days), "4h" (4 hours), "30m" (30 min), "1d12h" (1 day 12 hours)
+TRAIN_DURATION="3h"              # Train for this duration
 
 # =============================================================================
 # END OF PARAMETERS - Do not edit below this line
@@ -97,6 +94,41 @@ PROJECT_DIR="$SCRIPT_DIR"
 
 # Add src to PYTHONPATH
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
+
+# =============================================================================
+# ROCm/MI210 Optimizations
+# =============================================================================
+# Enable HIP memory pool for faster allocations
+export HIP_FORCE_DEV_KERNARG=1
+export HSA_ENABLE_SDMA=0                    # Sometimes helps with MI210 stability
+export GPU_MAX_HW_QUEUES=8                  # More hardware queues for parallelism
+export MIOPEN_FIND_MODE=3                   # Fast MIOpen kernel selection
+export MIOPEN_CACHE_DIR="${PROJECT_DIR}/.miopen_cache"
+mkdir -p "$MIOPEN_CACHE_DIR"
+
+# Enable TF32-like fast math for MI210 (matrix core acceleration)
+export ROCBLAS_TENSILE_LIBPATH=/opt/rocm/lib/rocblas/library
+
+# =============================================================================
+# torch.compile optimization - cache compiled models for faster subsequent runs
+# =============================================================================
+export TORCHINDUCTOR_CACHE_DIR="${PROJECT_DIR}/.torch_cache"
+export TORCH_COMPILE_CACHE_DIR="${PROJECT_DIR}/.torch_cache"
+mkdir -p "$TORCHINDUCTOR_CACHE_DIR"
+
+# Use more CPU threads for compilation (72 cores available)
+export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=16
+
+# =============================================================================
+# CPU/Memory Optimizations
+# =============================================================================
+# Use all NUMA nodes efficiently
+export OMP_NUM_THREADS=16                   # OpenMP threads for CPU ops
+export MKL_NUM_THREADS=16                   # MKL threads if using Intel MKL
+export NUMEXPR_MAX_THREADS=16               # NumExpr parallelism
+
+# Increase file descriptor limit for many workers
+ulimit -n 65536 2>/dev/null || true
 
 # Console logging
 LOG_DIR="${PROJECT_DIR}/logs/console"

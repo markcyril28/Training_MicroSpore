@@ -7,10 +7,21 @@ import time
 import argparse
 import tempfile
 import warnings
+import platform
+import multiprocessing as mp
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
+
+# Set multiprocessing start method before any other multiprocessing imports
+# 'fork' is faster on Linux but can cause issues with CUDA
+# 'spawn' is safer but slower
+if platform.system() != 'Windows':
+    try:
+        mp.set_start_method('fork', force=False)
+    except RuntimeError:
+        pass  # Already set
 
 import torch
 import torch.nn as nn
@@ -229,8 +240,8 @@ class Trainer:
             print(f"GPU: {torch.cuda.get_device_name()}")
             print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
 
-        # Set thread count for CPU operations
-        cpu_threads = max(1, (os.cpu_count() or 1))
+        # Set thread count for CPU operations - optimize for available cores
+        cpu_threads = min(16, max(1, (os.cpu_count() or 1)))  # Cap at 16 for efficiency
         torch.set_num_threads(cpu_threads)
         try:
             torch.set_num_interop_threads(min(4, cpu_threads))
@@ -245,11 +256,17 @@ class Trainer:
         self.model = create_model()
         self.model.to(self.device)
 
+        # Use fused AdamW for faster training on CUDA (PyTorch 2.0+)
+        use_fused = config.device == 'cuda' and hasattr(optim.AdamW, 'fused')
         self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=config.learning_rate,
             weight_decay=config.weight_decay,
+            fused=use_fused if use_fused else False,
         )
+        if use_fused:
+            print("Using fused AdamW optimizer for faster training")
+            
         self.scaler = GradScaler() if config.amp else None
 
         self.replay_buffer = ReplayBuffer(config.replay_dir)
@@ -281,8 +298,13 @@ class Trainer:
         # Compile after loading checkpoint to avoid state_dict key mismatch
         if self.config.compile_model and hasattr(torch, "compile"):
             try:
-                self.model = torch.compile(self.model)
-                print("Enabled torch.compile for the model")
+                print("Enabling torch.compile (first forward pass will be slow for compilation)...")
+                sys.stdout.flush()
+                # mode="reduce-overhead" compiles faster than default while still being fast
+                # Other options: "default" (balanced), "max-autotune" (slowest compile, fastest run)
+                self.model = torch.compile(self.model, mode="reduce-overhead")
+                print("torch.compile enabled - model will be compiled on first forward pass")
+                sys.stdout.flush()
             except Exception as e:
                 print(f"torch.compile unavailable: {e}")
 
@@ -733,8 +755,15 @@ class Trainer:
         self.model.train()
         total_loss = 0.0
         num_batches = 0
+        total_batches = len(dataloader)
+        first_batch = True
 
         for boards, move_features, move_counts, targets in dataloader:
+            if first_batch:
+                print(f"  First batch loaded. Processing {total_batches} batches...")
+                sys.stdout.flush()
+                first_batch = False
+            
             if self._stopped:
                 break
 
@@ -894,16 +923,29 @@ class Trainer:
             return
 
         # Create dataloader
+        # On Windows, limit workers to avoid multiprocessing spawn issues
+        effective_workers = self.config.dataloader_workers
+        import platform
+        if platform.system() == 'Windows' and effective_workers > 4:
+            print(f"Note: Limiting dataloader workers to 4 on Windows (was {effective_workers})")
+            effective_workers = 4
+        
+        print(f"Creating DataLoader with {effective_workers} workers...")
+        sys.stdout.flush()
         dataloader = create_dataloader(
             train_entries,
             batch_size=self.config.batch_size,
             shuffle=True,
-            num_workers=self.config.dataloader_workers,
+            num_workers=effective_workers,
             pin_memory=self.config.pin_memory,
         )
+        print(f"DataLoader ready with {len(dataloader)} batches.")
+        sys.stdout.flush()
 
         # Training loop
         print(f"\nStarting training from step {self.step}...")
+        print("(First batch may take a moment to load...)")
+        sys.stdout.flush()
         start_time = time.time()
         
         # Track last test step
@@ -928,11 +970,12 @@ class Trainer:
             if self.step % 5000 == 0 and self.step > 0:
                 self.run_selfplay(self.config.selfplay_games // 2)
                 train_entries, _ = prepare_training_data(self.replay_buffer)
+                print("Refreshing DataLoader...")
                 dataloader = create_dataloader(
                     train_entries,
                     batch_size=self.config.batch_size,
                     shuffle=True,
-                    num_workers=self.config.dataloader_workers,
+                    num_workers=effective_workers,
                     pin_memory=self.config.pin_memory,
                 )
             

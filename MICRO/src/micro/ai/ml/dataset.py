@@ -119,14 +119,33 @@ def create_dataloader(
 ) -> DataLoader:
     """Create a DataLoader from replay entries."""
     dataset = MicroDataset(entries)
+    
+    # persistent_workers can cause hangs - only use when we have enough batches
+    # to make it worthwhile
+    use_persistent = num_workers > 0 and len(entries) > batch_size * 100
+    
+    # Scale prefetch factor based on batch size for better GPU utilization
+    # Larger batches benefit from more prefetching
+    if num_workers > 0:
+        if batch_size >= 4096:
+            prefetch = 4  # More prefetching for large batches
+        elif batch_size >= 1024:
+            prefetch = 3
+        else:
+            prefetch = 2
+    else:
+        prefetch = None
+    
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         collate_fn=collate_batch,
-        pin_memory=pin_memory,
-        persistent_workers=num_workers > 0,
+        pin_memory=pin_memory and num_workers > 0,
+        persistent_workers=use_persistent,
+        prefetch_factor=prefetch,
+        drop_last=True,  # Drop incomplete last batch for consistent batch size
     )
 
 

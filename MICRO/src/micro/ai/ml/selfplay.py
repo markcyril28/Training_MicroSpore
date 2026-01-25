@@ -1,6 +1,8 @@
 """Self-play for generating training data."""
 
 import random
+import platform
+import sys
 from typing import List, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -221,19 +223,27 @@ class SelfPlayRunner:
             and self.num_workers > 1
         )
 
+        # On Windows, ProcessPoolExecutor can be problematic - limit workers and add timeout
+        is_windows = platform.system() == 'Windows'
+        effective_workers = min(self.num_workers, 8) if is_windows else self.num_workers
+
         # Use process pool for parallel games (algorithmic-only)
         # Note: On Windows, this requires __main__ guard
         if can_parallel:
+            print(f"  Starting parallel self-play with {effective_workers} workers...")
+            sys.stdout.flush()
             try:
-                with ProcessPoolExecutor(max_workers=self.num_workers) as executor:
+                with ProcessPoolExecutor(max_workers=effective_workers) as executor:
                     futures = [executor.submit(_play_game_worker, a) for a in args]
+                    print(f"  Submitted {len(futures)} game tasks...")
+                    sys.stdout.flush()
 
                     for future in as_completed(futures):
                         if not self._running:
                             break
 
                         try:
-                            entries_data = future.result()
+                            entries_data = future.result(timeout=300)  # 5 minute timeout per game
                             entries = [ReplayEntry.from_dict(d) for d in entries_data]
                             self.replay_buffer.add_entries(entries)
                             total_entries += len(entries)
@@ -253,6 +263,8 @@ class SelfPlayRunner:
         threaded_failed = False
 
         if not can_parallel and self.num_workers > 1:
+            print(f"  Starting threaded self-play with {effective_workers} workers...")
+            sys.stdout.flush()
             try:
                 args_full = [
                     (
@@ -268,15 +280,17 @@ class SelfPlayRunner:
                     for start in start_players
                 ]
 
-                with ThreadPoolExecutor(max_workers=self.num_workers) as executor:
+                with ThreadPoolExecutor(max_workers=effective_workers) as executor:
                     futures = [executor.submit(_play_game_worker_full, a) for a in args_full]
+                    print(f"  Submitted {len(futures)} game tasks...")
+                    sys.stdout.flush()
 
                     for future in as_completed(futures):
                         if not self._running:
                             break
 
                         try:
-                            entries_data = future.result()
+                            entries_data = future.result(timeout=300)  # 5 minute timeout
                             entries = [ReplayEntry.from_dict(d) for d in entries_data]
                             self.replay_buffer.add_entries(entries)
                             total_entries += len(entries)
