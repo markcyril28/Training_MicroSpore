@@ -103,18 +103,14 @@ export HIP_FORCE_DEV_KERNARG=1
 export HSA_ENABLE_SDMA=0                    # Sometimes helps with MI210 stability
 export GPU_MAX_HW_QUEUES=8                  # More hardware queues for parallelism
 
-# MIOpen settings - use writable cache in /tmp to avoid permission issues
+# MIOpen settings - DISABLE cache to avoid permission/locking issues
 export MIOPEN_FIND_MODE=1                   # Normal mode (more stable than fast mode 3)
 export MIOPEN_DEBUG_CONV_GEMM=1             # Enable GEMM convolution path
 export MIOPEN_DEBUG_CONV_DIRECT=0           # Disable direct convolution (can cause issues)
 export MIOPEN_DEBUG_CONV_FFT=0              # Disable FFT convolution
 export MIOPEN_DEBUG_CONV_WINOGRAD=0         # Disable Winograd (can cause rocBLAS errors)
-export MIOPEN_CACHE_DIR="/tmp/miopen_cache_${USER}"
-export MIOPEN_USER_DB_PATH="/tmp/miopen_cache_${USER}/user_db"
-export MIOPEN_LOG_LEVEL=4                   # Suppress MIOpen workspace allocation warnings
-export MIOPEN_DISABLE_CACHE=0               # Enable caching (but in writable location)
-mkdir -p "$MIOPEN_CACHE_DIR" && chmod 755 "$MIOPEN_CACHE_DIR"
-mkdir -p "$MIOPEN_USER_DB_PATH" && chmod 755 "$MIOPEN_USER_DB_PATH"
+export MIOPEN_DISABLE_CACHE=1               # DISABLE cache entirely to avoid file locking issues
+export MIOPEN_LOG_LEVEL=5                   # Only show fatal errors
 
 # rocBLAS/hipBLAS settings - disable problematic backends
 export ROCBLAS_TENSILE_LIBPATH=/opt/rocm/lib/rocblas/library
