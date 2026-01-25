@@ -90,6 +90,8 @@ class MoveScorer(nn.Module):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
+        # Clamp scores to prevent overflow in float16 (AMP) - range [-50, 50] is safe for softmax
+        x = torch.clamp(x, min=-50.0, max=50.0)
         return x
 
 
@@ -106,6 +108,24 @@ class MoveScorerNet(nn.Module):
 
         self.board_encoder = BoardEncoder(embedding_size, num_blocks)
         self.move_scorer = MoveScorer(embedding_size, hidden_size)
+        
+        # Initialize weights for numerical stability
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize weights with proper scaling to prevent large values."""
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.BatchNorm2d):
+                nn.init.ones_(module.weight)
+                nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Linear):
+                nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
 
     def forward(
         self,

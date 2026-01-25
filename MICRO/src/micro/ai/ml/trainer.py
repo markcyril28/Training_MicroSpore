@@ -848,8 +848,15 @@ class Trainer:
                 offset += num_moves
                 continue
 
+            # Numerical stability: subtract max before softmax to prevent overflow
+            position_scores = position_scores - position_scores.max()
+            
             # Cross-entropy over the legal moves
             log_probs = torch.log_softmax(position_scores, dim=0)
+            
+            # Additional safety: clamp log_probs to prevent -inf
+            log_probs = torch.clamp(log_probs, min=-100.0)
+            
             loss = -log_probs[target_idx]
             total_loss += loss
             valid_count += 1
