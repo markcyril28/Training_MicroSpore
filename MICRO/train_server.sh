@@ -44,7 +44,7 @@ COMPILE_MODEL=false              # torch.compile with reduce-overhead mode for f
 CPU_WORKERS=32                   # Use 56 of 72 threads for self-play (leave 16 for system/dataloader)
 SELFPLAY_GAMES=2048              # More games for larger replay buffer
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
-OPPONENT_FOCUS="algorithm"            # Opponent focus: "ml", "algorithm", or "both"
+OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
 NOISE_PROB=0.10                  # Lower noise for faster convergence with large batch
 MAX_MOVES_PER_GAME=200           # Max moves per game
@@ -96,40 +96,13 @@ PROJECT_DIR="$SCRIPT_DIR"
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 
 # =============================================================================
-# ROCm/MI210 Optimizations
+# ROCm/MI210 Settings - MINIMAL (diagnostic shows defaults work fine)
 # =============================================================================
-# CRITICAL: Override GFX version to fix HIPBLAS issues on MI210
-export HSA_OVERRIDE_GFX_VERSION=9.0.0
-
-# Stability settings for MI210
-export HIP_FORCE_DEV_KERNARG=1
-export HSA_ENABLE_SDMA=0                    # Disable SDMA for stability
-export GPU_MAX_HW_QUEUES=4                  # Reduce hardware queues
-export HIP_LAUNCH_BLOCKING=0                # Async launches (set to 1 to debug)
-export AMD_SERIALIZE_KERNEL=0               # Don't serialize (set to 3 to debug)
-
-# MIOpen settings - use most conservative/stable options
-export MIOPEN_FIND_MODE=1                   # Normal find mode
-export MIOPEN_DEBUG_CONV_GEMM=0             # Disable GEMM convolution
-export MIOPEN_DEBUG_CONV_IMPLICIT_GEMM=1    # Use implicit GEMM instead
-export MIOPEN_DEBUG_CONV_DIRECT=1           # Enable direct convolution as fallback
-export MIOPEN_DEBUG_CONV_FFT=0              # Disable FFT convolution
-export MIOPEN_DEBUG_CONV_WINOGRAD=0         # Disable Winograd
-export MIOPEN_DISABLE_CACHE=1               # Disable cache to avoid file issues
-export MIOPEN_ENABLE_LOGGING=0              # Disable logging
+# Only suppress logging - no other overrides needed
+export MIOPEN_ENABLE_LOGGING=0              # Disable MIOpen logging
 export MIOPEN_ENABLE_LOGGING_CMD=0          # Disable command logging
 export AMD_LOG_LEVEL=0                      # Disable AMD driver logging
-
-# rocBLAS/hipBLAS settings
-export ROCBLAS_TENSILE_LIBPATH=/opt/rocm/lib/rocblas/library
-export ROCBLAS_LAYER=0                      # Disable logging
-export TORCH_BLAS_PREFER_HIPBLASLT=0        # Disable hipBLASLt
-export HIPBLASLT_LOG_MASK=0                 # Disable hipBLASLt logging
-
-# PyTorch HIP settings
-export PYTORCH_HIP_ALLOC_CONF=max_split_size_mb:256
-export TORCH_USE_HIP_DSA=0                  # Disable device-side assertions
-export HIP_VISIBLE_DEVICES=0                # Use only first GPU
+export ROCBLAS_LAYER=0                      # Disable rocBLAS logging
 
 # =============================================================================
 # torch.compile optimization - cache compiled models for faster subsequent runs
