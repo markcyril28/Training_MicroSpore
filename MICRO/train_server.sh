@@ -84,7 +84,7 @@ RESUME_LATEST=true               # Set to true to resume from latest checkpoint 
 # -----------------------------------------------------------------------------
 # Time-based Stopping
 # -----------------------------------------------------------------------------
-TRAIN_DURATION="5h"                # Train for this duration (empty = no limit)
+TRAIN_DURATION="3h"                # Train for this duration (empty = no limit)
                                  # Examples: "2d" (2 days), "4h" (4 hours), "30m" (30 min), "1d12h" (1 day 12 hours)
 
 # =============================================================================
