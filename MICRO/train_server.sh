@@ -102,13 +102,25 @@ export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
 export HIP_FORCE_DEV_KERNARG=1
 export HSA_ENABLE_SDMA=0                    # Sometimes helps with MI210 stability
 export GPU_MAX_HW_QUEUES=8                  # More hardware queues for parallelism
-export MIOPEN_FIND_MODE=3                   # Fast MIOpen kernel selection
+
+# MIOpen settings - use GEMM fallback to avoid rocBLAS errors
+export MIOPEN_FIND_MODE=1                   # Normal mode (more stable than fast mode 3)
+export MIOPEN_DEBUG_CONV_GEMM=1             # Enable GEMM convolution path
+export MIOPEN_DEBUG_CONV_DIRECT=0           # Disable direct convolution (can cause issues)
+export MIOPEN_DEBUG_CONV_FFT=0              # Disable FFT convolution
+export MIOPEN_DEBUG_CONV_WINOGRAD=0         # Disable Winograd (can cause rocBLAS errors)
 export MIOPEN_CACHE_DIR="${PROJECT_DIR}/.miopen_cache"
 export MIOPEN_LOG_LEVEL=4                   # Suppress MIOpen workspace allocation warnings
+export MIOPEN_USER_DB_PATH="${PROJECT_DIR}/.miopen_cache/user_db"
 mkdir -p "$MIOPEN_CACHE_DIR"
+mkdir -p "$MIOPEN_USER_DB_PATH"
 
-# Enable TF32-like fast math for MI210 (matrix core acceleration)
+# rocBLAS settings
 export ROCBLAS_TENSILE_LIBPATH=/opt/rocm/lib/rocblas/library
+export ROCBLAS_LAYER=0                      # Disable rocBLAS logging
+
+# Disable hipBLASLt which can cause issues on MI210
+export TORCH_BLAS_PREFER_HIPBLASLT=0
 
 # =============================================================================
 # torch.compile optimization - cache compiled models for faster subsequent runs
