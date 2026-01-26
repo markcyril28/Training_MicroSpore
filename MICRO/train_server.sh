@@ -11,7 +11,7 @@ set -euo pipefail
 #   Architecture: gfx90a (CDNA2)
 #   Driver: amdgpu
 #   Compute Platform: ROCm 6.x
-#   CPU Threads: 48
+#   CPU Threads: 128
 #===============================================================================
 
 : << 'SERVER_SPECS'
@@ -28,7 +28,7 @@ GPU[0]          : Average Graphics Package Power (W): 42.0
 SERVER_SPECS
 
 # =============================================================================
-# TRAINING PARAMETERS - Optimized for MI210 64GB + 48 CPU + 1TB RAM
+# TRAINING PARAMETERS - Optimized for MI210 64GB + 128 CPU threads + 1TB RAM
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -37,18 +37,18 @@ SERVER_SPECS
 DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
 NO_AMP=true                      # DISABLED: Testing if AMP causes gradient issues on ROCm
 AMP_DTYPE="bfloat16"             # OPTIONS: "bfloat16" (recommended for MI210), "float16" (may cause issues)
-COMPILE_MODEL=false              # DISABLED: torch.compile may break gradients on ROCm
-COMPILE_MODE="default"          # OPTIONS: "default" (fast compile), "reduce-overhead" (slow compile, fast run)
+COMPILE_MODEL=true              # DISABLED: torch.compile may break gradients on ROCm
+COMPILE_MODE="reduce-overhead"          # OPTIONS: "default" (fast compile), "reduce-overhead" (slow compile, fast run)
 
 # -----------------------------------------------------------------------------
-# Self-play Settings (Optimized for 48 CPU threads)
+# Self-play Settings (Optimized for 128 CPU threads)
 # -----------------------------------------------------------------------------
-CPU_WORKERS=32                   # Half of 48 threads for self-play (rest for dataloader/system)
+CPU_WORKERS=48                   # ~40% of 128 threads for self-play (rest for dataloader/system)
 SELFPLAY_GAMES=2048              # Balanced: enough data without long epoch times
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
-NOISE_PROB=0.50                  # Slightly more exploration for diversity
+NOISE_PROB=0.20                  # Slightly more exploration for diversity
 MAX_MOVES_PER_GAME=100           # Max moves per game
 
 # -----------------------------------------------------------------------------
@@ -62,9 +62,9 @@ TRAIN_STEPS=100000000000         # Total training steps
 CHECKPOINT_EVERY=2000            # Checkpoint every 2000 steps
 
 # -----------------------------------------------------------------------------
-# DataLoader Settings (Optimized for 48 CPU + 1TB RAM)
+# DataLoader Settings (Optimized for 128 CPU threads + 1TB RAM)
 # -----------------------------------------------------------------------------
-DATALOADER_WORKERS=32             # 8 workers optimal for 48 threads (leaves room for self-play)
+DATALOADER_WORKERS=16            # I/O bound - more than 16 rarely helps
 PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 
 # -----------------------------------------------------------------------------
@@ -84,7 +84,7 @@ RESUME_LATEST=true               # Resume from latest checkpoint in models/check
 # -----------------------------------------------------------------------------
 # Time-based Stopping
 # -----------------------------------------------------------------------------
-TRAIN_DURATION="4h"              # Train for this duration
+TRAIN_DURATION="2h"              # Train for this duration
 
 # =============================================================================
 # END OF PARAMETERS - Do not edit below this line
@@ -115,20 +115,19 @@ export TRITON_CACHE_DIR="${PROJECT_DIR}/.triton_cache"
 mkdir -p "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR"
 
 # Enable Parallel Compilation (use remaining threads during compile phase)
-export MAX_JOBS=16
-export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=15
+export MAX_JOBS=32
+export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=24
 
 # Caching improvements
 export TORCHINDUCTOR_FX_GRAPH_CACHE=1
 export TORCHINDUCTOR_AUTOTUNE_LOCAL_CACHE=1
 
 # =============================================================================
-# CPU/Memory Optimizations (48 threads total)
+# CPU/Memory Optimizations (128 threads: 48 self-play + 16 dataloader + 32 OMP/MKL + 32 system)
 # =============================================================================
-# Balance threads: 24 self-play + 8 dataloader + 12 OMP = 44 (4 for system)
-export OMP_NUM_THREADS=12                   # OpenMP threads for CPU ops
-export MKL_NUM_THREADS=12                   # MKL threads if using Intel MKL
-export NUMEXPR_MAX_THREADS=12               # NumExpr parallelism
+export OMP_NUM_THREADS=32                   # OpenMP threads for CPU tensor ops
+export MKL_NUM_THREADS=32                   # MKL threads if using Intel MKL
+export NUMEXPR_MAX_THREADS=32               # NumExpr parallelism
 
 # Increase file descriptor limit for many workers
 ulimit -n 65536 2>/dev/null || true
