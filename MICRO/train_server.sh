@@ -70,7 +70,7 @@ PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 # -----------------------------------------------------------------------------
 # Model Testing Settings (ML vs Algorithm)
 # -----------------------------------------------------------------------------
-TEST_VS_ALGO=true                # Enable periodic testing against algorithm
+TEST_VS_ALGO=false                # Enable periodic testing against algorithm
 TEST_EVERY=5000                  # Test every 5000 steps (testing is expensive)
 TEST_GAMES=50                    # Test games for reliable metrics
 TEST_DIFFICULTY="medium"         # Algorithm difficulty for testing
