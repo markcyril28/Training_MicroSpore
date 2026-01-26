@@ -64,7 +64,7 @@ CHECKPOINT_EVERY=2000            # Checkpoint every 2000 steps
 # -----------------------------------------------------------------------------
 # DataLoader Settings (Optimized for 48 CPU + 1TB RAM)
 # -----------------------------------------------------------------------------
-DATALOADER_WORKERS=16             # 8 workers optimal for 48 threads (leaves room for self-play)
+DATALOADER_WORKERS=32             # 8 workers optimal for 48 threads (leaves room for self-play)
 PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 
 # -----------------------------------------------------------------------------
