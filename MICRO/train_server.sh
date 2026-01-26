@@ -43,19 +43,19 @@ COMPILE_MODE="default"          # OPTIONS: "default" (fast compile), "reduce-ove
 # -----------------------------------------------------------------------------
 # Self-play Settings (Optimized for 48 CPU threads)
 # -----------------------------------------------------------------------------
-CPU_WORKERS=64                   # Use 24 of 48 threads for self-play (leave 24 for system/dataloader/compile)
-SELFPLAY_GAMES=4096              # More games per epoch for faster convergence
+CPU_WORKERS=24                   # Half of 48 threads for self-play (rest for dataloader/system)
+SELFPLAY_GAMES=2048              # Balanced: enough data without long epoch times
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
-NOISE_PROB=0.10                  # Lower noise for faster convergence with large batch
+NOISE_PROB=0.40                  # Slightly more exploration for diversity
 MAX_MOVES_PER_GAME=200           # Max moves per game
 
 # -----------------------------------------------------------------------------
-# Training Settings (Optimized for 64GB HBM2e VRAM + BFloat16)
+# Training Settings (Optimized for 64GB HBM2e VRAM - FP32 mode)
 # -----------------------------------------------------------------------------
-BATCH_SIZE=1024                  # Larger batch with BF16 (HIPBLAS issues were with FP16)
-LEARNING_RATE=3e-4               # Scaled with batch size (linear scaling rule)
+BATCH_SIZE=1024                  # FP32 uses 2x memory vs FP16, keep moderate
+LEARNING_RATE=1e-4               # Lower LR for FP32 stability (was 3e-4)
 WEIGHT_DECAY=1e-5                # Weight decay for regularization
 GRAD_CLIP_NORM=1.0               # Gradient clipping for stability
 TRAIN_STEPS=100000000000         # Total training steps
