@@ -35,7 +35,7 @@ SERVER_SPECS
 # Device Settings
 # -----------------------------------------------------------------------------
 DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
-NO_AMP=false                     # ENABLED: Use BFloat16 mixed precision (stable on MI210)
+NO_AMP=true                      # DISABLED: Testing if AMP causes gradient issues on ROCm
 AMP_DTYPE="bfloat16"             # OPTIONS: "bfloat16" (recommended for MI210), "float16" (may cause issues)
 COMPILE_MODEL=false              # DISABLED: torch.compile may break gradients on ROCm
 COMPILE_MODE="default"          # OPTIONS: "default" (fast compile), "reduce-overhead" (slow compile, fast run)
