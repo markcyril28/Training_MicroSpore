@@ -43,13 +43,13 @@ COMPILE_MODE="default"          # OPTIONS: "default" (fast compile), "reduce-ove
 # -----------------------------------------------------------------------------
 # Self-play Settings (Optimized for 48 CPU threads)
 # -----------------------------------------------------------------------------
-CPU_WORKERS=24                   # Half of 48 threads for self-play (rest for dataloader/system)
+CPU_WORKERS=32                   # Half of 48 threads for self-play (rest for dataloader/system)
 SELFPLAY_GAMES=2048              # Balanced: enough data without long epoch times
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
 NOISE_PROB=0.40                  # Slightly more exploration for diversity
-MAX_MOVES_PER_GAME=200           # Max moves per game
+MAX_MOVES_PER_GAME=100           # Max moves per game
 
 # -----------------------------------------------------------------------------
 # Training Settings (Optimized for 64GB HBM2e VRAM - FP32 mode)
@@ -64,7 +64,7 @@ CHECKPOINT_EVERY=2000            # Checkpoint every 2000 steps
 # -----------------------------------------------------------------------------
 # DataLoader Settings (Optimized for 48 CPU + 1TB RAM)
 # -----------------------------------------------------------------------------
-DATALOADER_WORKERS=8             # 8 workers optimal for 48 threads (leaves room for self-play)
+DATALOADER_WORKERS=16             # 8 workers optimal for 48 threads (leaves room for self-play)
 PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 
 # -----------------------------------------------------------------------------
