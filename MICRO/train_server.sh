@@ -48,7 +48,7 @@ SELFPLAY_GAMES=2048              # Balanced: enough data without long epoch time
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
-NOISE_PROB=0.40                  # Slightly more exploration for diversity
+NOISE_PROB=0.50                  # Slightly more exploration for diversity
 MAX_MOVES_PER_GAME=100           # Max moves per game
 
 # -----------------------------------------------------------------------------
