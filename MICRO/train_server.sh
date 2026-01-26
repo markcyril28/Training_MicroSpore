@@ -114,6 +114,9 @@ export TORCH_COMPILE_CACHE_DIR="${PROJECT_DIR}/.torch_cache"
 export TRITON_CACHE_DIR="${PROJECT_DIR}/.triton_cache"
 mkdir -p "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR"
 
+# Skip CUDAGraph for dynamic shapes - prevents overhead from recording many graphs
+export TORCHINDUCTOR_CUDAGRAPH_SKIP_DYNAMIC=1
+
 # Enable Parallel Compilation (use remaining threads during compile phase)
 export MAX_JOBS=32
 export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=24
