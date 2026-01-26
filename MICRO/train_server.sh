@@ -43,7 +43,7 @@ COMPILE_MODE="default"          # OPTIONS: "default" (fast compile), "reduce-ove
 # -----------------------------------------------------------------------------
 # Self-play Settings (Optimized for 48 CPU threads)
 # -----------------------------------------------------------------------------
-CPU_WORKERS=32                   # Use 24 of 48 threads for self-play (leave 24 for system/dataloader/compile)
+CPU_WORKERS=64                   # Use 24 of 48 threads for self-play (leave 24 for system/dataloader/compile)
 SELFPLAY_GAMES=4096              # More games per epoch for faster convergence
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
@@ -105,10 +105,6 @@ export MIOPEN_ENABLE_LOGGING=0              # Disable MIOpen logging
 export MIOPEN_ENABLE_LOGGING_CMD=0          # Disable command logging
 export AMD_LOG_LEVEL=0                      # Disable AMD driver logging
 export ROCBLAS_LAYER=0                      # Disable rocBLAS logging
-
-# Performance optimizations for MI210
-export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True  # Better memory allocation
-export HSA_FORCE_FINE_GRAIN_PCIE=1          # Enable fine-grained PCIe for faster transfers
 
 # =============================================================================
 # torch.compile optimization - cache compiled models for faster subsequent runs
