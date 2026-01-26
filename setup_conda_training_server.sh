@@ -134,13 +134,31 @@ fi
 # Initialize conda for bash if needed
 eval "$(conda shell.bash hook)"
 
+# Configure conda for faster metadata fetching
+print_info "Configuring conda for faster operations..."
+conda config --set channel_priority strict
+conda config --set remote_read_timeout_secs 120
+conda config --set remote_connect_timeout_secs 30
+conda config --set remote_max_retries 3
+
+# Clean conda cache if it might be corrupted (optional but helps with hangs)
+echo "Cleaning conda cache (this helps prevent metadata hangs)..."
+conda clean --index-cache --quiet 2>/dev/null || true
+
 # Check for mamba (faster alternative to conda)
 if command -v mamba &> /dev/null; then
     PKG_MANAGER="mamba"
     print_success "Using mamba (faster package manager)"
 else
     PKG_MANAGER="conda"
-    print_info "Using conda (install mamba for faster operations: conda install -n base -c conda-forge mamba)"
+    print_warning "Using conda - this can be slow. Consider installing mamba:"
+    echo "    conda install -n base -c conda-forge mamba"
+    echo ""
+    print_info "Tip: If conda hangs on 'Collecting package metadata', try:"
+    echo "    1. Run: conda clean --all"
+    echo "    2. Check network connectivity"
+    echo "    3. Install mamba for faster operations"
+    echo ""
 fi
 
 # Helper function: run command with mamba, fallback to conda if mamba fails
@@ -257,8 +275,10 @@ echo "Environment: ${ENV_NAME}"
 echo "Python version: ${PYTHON_VERSION}"
 echo ""
 
-# Create the environment (mamba if available, fallback to conda)
-run_pkg_cmd create -n ${ENV_NAME} python=${PYTHON_VERSION} -y
+# Create the environment with explicit channels (prevents slow default channel queries)
+# Using --override-channels to avoid metadata fetching from unnecessary sources
+print_info "Creating environment (this may take a few minutes)..."
+run_pkg_cmd create -n ${ENV_NAME} python=${PYTHON_VERSION} -c conda-forge --override-channels -y
 
 # Activate the environment
 conda activate ${ENV_NAME}
@@ -313,7 +333,7 @@ echo ""
 
 print_header "Installing system utilities (ncurses, pigz)"
 
-run_pkg_cmd install -c conda-forge ncurses pigz -y
+run_pkg_cmd install -c conda-forge --override-channels ncurses pigz -y
 
 print_success "ncurses and pigz installed"
 echo ""
