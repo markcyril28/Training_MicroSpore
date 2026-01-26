@@ -11,7 +11,7 @@ set -euo pipefail
 #   Architecture: gfx90a (CDNA2)
 #   Driver: amdgpu
 #   Compute Platform: ROCm 6.x
-#   CPU Threads: 64
+#   CPU Threads: 48
 #===============================================================================
 
 : << 'SERVER_SPECS'
@@ -28,22 +28,23 @@ GPU[0]          : Average Graphics Package Power (W): 42.0
 SERVER_SPECS
 
 # =============================================================================
-# TRAINING PARAMETERS - Optimized for MI210 64GB + 72 CPU + 1TB RAM
+# TRAINING PARAMETERS - Optimized for MI210 64GB + 48 CPU + 1TB RAM
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # Device Settings
 # -----------------------------------------------------------------------------
 DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
-NO_AMP=true                      # DISABLED: MI210 can have gradient issues with AMP/GradScaler
+NO_AMP=false                     # ENABLED: Use BFloat16 mixed precision (stable on MI210)
+AMP_DTYPE="bfloat16"             # OPTIONS: "bfloat16" (recommended for MI210), "float16" (may cause issues)
 COMPILE_MODEL=true              # Enable torch.compile
 COMPILE_MODE="default"          # OPTIONS: "default" (fast compile), "reduce-overhead" (slow compile, fast run)
 
 # -----------------------------------------------------------------------------
-# Self-play Settings (Optimized for 72 CPU threads)
+# Self-play Settings (Optimized for 48 CPU threads)
 # -----------------------------------------------------------------------------
-CPU_WORKERS=32                   # Use 56 of 72 threads for self-play (leave 16 for system/dataloader)
-SELFPLAY_GAMES=2048              # More games for larger replay buffer
+CPU_WORKERS=32                   # Use 24 of 48 threads for self-play (leave 24 for system/dataloader/compile)
+SELFPLAY_GAMES=4096              # More games per epoch for faster convergence
 FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
 OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
 SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
@@ -51,27 +52,27 @@ NOISE_PROB=0.10                  # Lower noise for faster convergence with large
 MAX_MOVES_PER_GAME=200           # Max moves per game
 
 # -----------------------------------------------------------------------------
-# Training Settings (Optimized for 64GB HBM2e VRAM)
+# Training Settings (Optimized for 64GB HBM2e VRAM + BFloat16)
 # -----------------------------------------------------------------------------
-BATCH_SIZE=512                   # Small batch to avoid HIPBLAS errors on MI210
-LEARNING_RATE=2e-4               # Scaled with batch size (linear scaling rule)
+BATCH_SIZE=1024                  # Larger batch with BF16 (HIPBLAS issues were with FP16)
+LEARNING_RATE=3e-4               # Scaled with batch size (linear scaling rule)
 WEIGHT_DECAY=1e-5                # Weight decay for regularization
 GRAD_CLIP_NORM=1.0               # Gradient clipping for stability
 TRAIN_STEPS=100000000000         # Total training steps
-CHECKPOINT_EVERY=5000            # More frequent checkpoints with faster training
+CHECKPOINT_EVERY=2000            # Checkpoint every 2000 steps
 
 # -----------------------------------------------------------------------------
-# DataLoader Settings (Optimized for 72 CPU + 1TB RAM)
+# DataLoader Settings (Optimized for 48 CPU + 1TB RAM)
 # -----------------------------------------------------------------------------
-DATALOADER_WORKERS=12            # 12 workers is optimal for this batch size
+DATALOADER_WORKERS=8             # 8 workers optimal for 48 threads (leaves room for self-play)
 PIN_MEMORY=true                  # Pin memory for faster GPU transfer
 
 # -----------------------------------------------------------------------------
 # Model Testing Settings (ML vs Algorithm)
 # -----------------------------------------------------------------------------
 TEST_VS_ALGO=true                # Enable periodic testing against algorithm
-TEST_EVERY=25000                 # Test more frequently to track progress
-TEST_GAMES=50                    # More test games for reliable metrics
+TEST_EVERY=5000                  # Test every 5000 steps (testing is expensive)
+TEST_GAMES=50                    # Test games for reliable metrics
 TEST_DIFFICULTY="medium"         # Algorithm difficulty for testing
 
 # -----------------------------------------------------------------------------
@@ -105,6 +106,10 @@ export MIOPEN_ENABLE_LOGGING_CMD=0          # Disable command logging
 export AMD_LOG_LEVEL=0                      # Disable AMD driver logging
 export ROCBLAS_LAYER=0                      # Disable rocBLAS logging
 
+# Performance optimizations for MI210
+export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True  # Better memory allocation
+export HSA_FORCE_FINE_GRAIN_PCIE=1          # Enable fine-grained PCIe for faster transfers
+
 # =============================================================================
 # torch.compile optimization - cache compiled models for faster subsequent runs
 # =============================================================================
@@ -113,21 +118,21 @@ export TORCH_COMPILE_CACHE_DIR="${PROJECT_DIR}/.torch_cache"
 export TRITON_CACHE_DIR="${PROJECT_DIR}/.triton_cache"
 mkdir -p "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR"
 
-# Enable Parallel Compilation
-export MAX_JOBS=32
-export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=32
+# Enable Parallel Compilation (use remaining threads during compile phase)
+export MAX_JOBS=16
+export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=15
 
 # Caching improvements
 export TORCHINDUCTOR_FX_GRAPH_CACHE=1
 export TORCHINDUCTOR_AUTOTUNE_LOCAL_CACHE=1
 
 # =============================================================================
-# CPU/Memory Optimizations
+# CPU/Memory Optimizations (48 threads total)
 # =============================================================================
-# Use all NUMA nodes efficiently
-export OMP_NUM_THREADS=16                   # OpenMP threads for CPU ops
-export MKL_NUM_THREADS=16                   # MKL threads if using Intel MKL
-export NUMEXPR_MAX_THREADS=16               # NumExpr parallelism
+# Balance threads: 24 self-play + 8 dataloader + 12 OMP = 44 (4 for system)
+export OMP_NUM_THREADS=12                   # OpenMP threads for CPU ops
+export MKL_NUM_THREADS=12                   # MKL threads if using Intel MKL
+export NUMEXPR_MAX_THREADS=12               # NumExpr parallelism
 
 # Increase file descriptor limit for many workers
 ulimit -n 65536 2>/dev/null || true
@@ -209,6 +214,8 @@ ARGS=""
 ARGS+=" --device ${DEVICE}"
 if [ "$NO_AMP" = true ]; then
     ARGS+=" --no-amp"
+else
+    ARGS+=" --amp-dtype ${AMP_DTYPE}"
 fi
 if [ "$COMPILE_MODEL" = true ]; then
     ARGS+=" --compile-model"
@@ -266,7 +273,7 @@ echo "Training parameters:"
 echo ""
 echo "  [Device Settings]"
 echo "    Device:            ${DEVICE}"
-echo "    Mixed Precision:   $([ "$NO_AMP" = true ] && echo "disabled" || echo "enabled")"
+echo "    Mixed Precision:   $([ "$NO_AMP" = true ] && echo "disabled" || echo "enabled (${AMP_DTYPE})")"
 echo "    Model Compile:     $([ "$COMPILE_MODEL" = true ] && echo "enabled" || echo "disabled")"
 echo ""
 echo "  [Self-play Settings]"

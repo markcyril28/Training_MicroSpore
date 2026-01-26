@@ -164,6 +164,7 @@ class TrainingConfig:
     # Device settings
     device: str = 'cuda'
     amp: bool = True
+    amp_dtype: str = 'float16'  # 'float16' or 'bfloat16' (bfloat16 recommended for AMD MI210)
     compile_model: bool = True
     compile_mode: str = 'reduce-overhead'
 
@@ -267,8 +268,22 @@ class Trainer:
         )
         if use_fused:
             print("Using fused AdamW optimizer for faster training")
-            
-        self.scaler = GradScaler() if config.amp else None
+        
+        # Determine AMP dtype
+        self.amp_dtype = torch.float16
+        if config.amp:
+            if config.amp_dtype == 'bfloat16':
+                if torch.cuda.is_bf16_supported():
+                    self.amp_dtype = torch.bfloat16
+                    print("Using BFloat16 mixed precision (no GradScaler needed)")
+                else:
+                    print("BFloat16 not supported, falling back to Float16")
+                    self.amp_dtype = torch.float16
+            else:
+                print("Using Float16 mixed precision with GradScaler")
+        
+        # GradScaler only needed for float16, not bfloat16
+        self.scaler = GradScaler() if (config.amp and self.amp_dtype == torch.float16) else None
 
         self.replay_buffer = ReplayBuffer(config.replay_dir)
 
@@ -785,8 +800,8 @@ class Trainer:
 
             self.optimizer.zero_grad()
 
-            if self.config.amp and self.scaler is not None:
-                with autocast(device_type='cuda'):
+            if self.config.amp:
+                with autocast(device_type='cuda', dtype=self.amp_dtype):
                     scores = self.model(boards, move_features, move_counts)
                     if not torch.isfinite(scores).all():
                         print("  Warning: non-finite scores detected; skipping batch")
@@ -797,14 +812,20 @@ class Trainer:
                     print("  Warning: non-finite loss detected; skipping batch")
                     continue
 
-                self.scaler.scale(loss).backward()
-
-                if self.config.grad_clip_norm is not None:
-                    self.scaler.unscale_(self.optimizer)
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip_norm)
-
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
+                if self.scaler is not None:
+                    # Float16 path with GradScaler
+                    self.scaler.scale(loss).backward()
+                    if self.config.grad_clip_norm is not None:
+                        self.scaler.unscale_(self.optimizer)
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip_norm)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    # BFloat16 path without GradScaler
+                    loss.backward()
+                    if self.config.grad_clip_norm is not None:
+                        torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip_norm)
+                    self.optimizer.step()
             else:
                 scores = self.model(boards, move_features, move_counts)
                 if not torch.isfinite(scores).all():
@@ -1100,6 +1121,9 @@ def main():
                        help='Device to train on')
     parser.add_argument('--no-amp', action='store_true',
                        help='Disable mixed precision training')
+    parser.add_argument('--amp-dtype', type=str, default='float16',
+                       choices=['float16', 'bfloat16'],
+                       help='AMP dtype: float16 (default) or bfloat16 (recommended for AMD MI210)')
     parser.add_argument('--compile-model', action='store_true',
                        help='Use torch.compile for faster training')
     parser.add_argument('--compile-mode', type=str, default='reduce-overhead', 
@@ -1196,6 +1220,7 @@ def main():
         compile_mode=args.compile_mode,
         device=args.device,
         amp=not args.no_amp,
+        amp_dtype=args.amp_dtype,
         compile_model=args.compile_model,
         # Self-play settings
         cpu_workers=args.cpu_workers,
