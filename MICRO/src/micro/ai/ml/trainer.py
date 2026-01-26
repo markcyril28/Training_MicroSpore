@@ -165,6 +165,7 @@ class TrainingConfig:
     device: str = 'cuda'
     amp: bool = True
     compile_model: bool = True
+    compile_mode: str = 'reduce-overhead'
 
     # Self-play settings
     cpu_workers: int = field(default_factory=lambda: max(2, (os.cpu_count() or 2)))
@@ -298,11 +299,11 @@ class Trainer:
         # Compile after loading checkpoint to avoid state_dict key mismatch
         if self.config.compile_model and hasattr(torch, "compile"):
             try:
-                print("Enabling torch.compile (first forward pass will be slow for compilation)...")
+                print(f"Enabling torch.compile (mode={self.config.compile_mode})...")
                 sys.stdout.flush()
                 # mode="reduce-overhead" compiles faster than default while still being fast
                 # Other options: "default" (balanced), "max-autotune" (slowest compile, fastest run)
-                self.model = torch.compile(self.model, mode="reduce-overhead")
+                self.model = torch.compile(self.model, mode=self.config.compile_mode)
                 print("torch.compile enabled - model will be compiled on first forward pass")
                 sys.stdout.flush()
             except Exception as e:
@@ -1101,6 +1102,9 @@ def main():
                        help='Disable mixed precision training')
     parser.add_argument('--compile-model', action='store_true',
                        help='Use torch.compile for faster training')
+    parser.add_argument('--compile-mode', type=str, default='reduce-overhead', 
+                       choices=['default', 'reduce-overhead', 'max-autotune'],
+                       help='Compilation mode: default (fast compile), reduce-overhead (fast run)')
 
     # Self-play settings
     parser.add_argument('--cpu-workers', type=int, default=10,
@@ -1189,6 +1193,7 @@ def main():
 
     config = TrainingConfig(
         # Device settings
+        compile_mode=args.compile_mode,
         device=args.device,
         amp=not args.no_amp,
         compile_model=args.compile_model,

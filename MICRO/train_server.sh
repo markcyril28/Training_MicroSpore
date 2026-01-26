@@ -11,7 +11,7 @@ set -euo pipefail
 #   Architecture: gfx90a (CDNA2)
 #   Driver: amdgpu
 #   Compute Platform: ROCm 6.x
-#   CPU Threads: 72
+#   CPU Threads: 64
 #===============================================================================
 
 : << 'SERVER_SPECS'
@@ -36,7 +36,8 @@ SERVER_SPECS
 # -----------------------------------------------------------------------------
 DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
 NO_AMP=true                      # DISABLED: MI210 can have gradient issues with AMP/GradScaler
-COMPILE_MODEL=false              # torch.compile with reduce-overhead mode for faster training
+COMPILE_MODEL=true              # Enable torch.compile
+COMPILE_MODE="default"          # OPTIONS: "default" (fast compile), "reduce-overhead" (slow compile, fast run)
 
 # -----------------------------------------------------------------------------
 # Self-play Settings (Optimized for 72 CPU threads)
@@ -109,10 +110,16 @@ export ROCBLAS_LAYER=0                      # Disable rocBLAS logging
 # =============================================================================
 export TORCHINDUCTOR_CACHE_DIR="${PROJECT_DIR}/.torch_cache"
 export TORCH_COMPILE_CACHE_DIR="${PROJECT_DIR}/.torch_cache"
-mkdir -p "$TORCHINDUCTOR_CACHE_DIR"
+export TRITON_CACHE_DIR="${PROJECT_DIR}/.triton_cache"
+mkdir -p "$TORCHINDUCTOR_CACHE_DIR" "$TRITON_CACHE_DIR"
 
-# Use more CPU threads for compilation (72 cores available)
-export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=16
+# Enable Parallel Compilation
+export MAX_JOBS=32
+export TORCHINDUCTOR_MAX_AUTOTUNE_PROCESSES=32
+
+# Caching improvements
+export TORCHINDUCTOR_FX_GRAPH_CACHE=1
+export TORCHINDUCTOR_AUTOTUNE_LOCAL_CACHE=1
 
 # =============================================================================
 # CPU/Memory Optimizations
@@ -205,6 +212,7 @@ if [ "$NO_AMP" = true ]; then
 fi
 if [ "$COMPILE_MODEL" = true ]; then
     ARGS+=" --compile-model"
+    ARGS+=" --compile-mode ${COMPILE_MODE}"
 fi
 
 # Self-play settings
