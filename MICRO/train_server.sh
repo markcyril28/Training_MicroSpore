@@ -22,9 +22,10 @@ set -euo pipefail
 # =============================================================================
 
 # Config file to use (comment/uncomment to switch)
-CONFIG_FILE="config/training_config_server.yaml"
-# CONFIG_FILE="config/training_config_local.yaml"
-# CONFIG_FILE="config/training_config.yaml"
+# Note: These are relative to SCRIPT_DIR, resolved after SCRIPT_DIR is set
+_CONFIG_FILE="config/training_config_server.yaml"
+# _CONFIG_FILE="config/training_config_local.yaml"
+# _CONFIG_FILE="config/training_config.yaml"
 
 # Optional: Profile to apply from the config file
 # CONFIG_PROFILE="server"
@@ -51,6 +52,9 @@ TRAIN_DURATION=""                # Override config duration (e.g., "2h", "1d", "
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
+
+# Resolve config file path (relative paths are relative to SCRIPT_DIR)
+CONFIG_FILE="${SCRIPT_DIR}/${_CONFIG_FILE}"
 
 # Add src to PYTHONPATH
 export PYTHONPATH="${PROJECT_DIR}/src:${PYTHONPATH:-}"
