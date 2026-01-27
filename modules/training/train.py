@@ -1642,6 +1642,27 @@ def run_training(
     except Exception as e:
         pass  # Non-critical check, continue if it fails
     
+    # ===========================================================================
+    # MULTI-SCALE VALIDATION: Prevent ZeroDivisionError with large images
+    # ===========================================================================
+    if multi_scale and img_size > 640:
+        # Multi-scale training with large images can cause interpolation errors
+        # when random scaling produces dimensions that round to 0
+        print()
+        print("=" * 70)
+        print("  ⚠️  MULTI-SCALE WARNING")
+        print("=" * 70)
+        print(f"  multi_scale=True with img_size={img_size} may cause errors.")
+        print()
+        print("  Multi-scale randomly scales images during training, which can")
+        print("  cause ZeroDivisionError in PyTorch's interpolation with large images.")
+        print()
+        print("  Automatically disabling multi_scale for stability.")
+        print("  To use multi-scale, reduce img_size to 640 or lower.")
+        print("=" * 70)
+        print()
+        multi_scale = False
+    
     # Load or download model
     model = load_or_download_model(model_name, Path(weights_dir))
     
