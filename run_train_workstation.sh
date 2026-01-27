@@ -498,6 +498,8 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     fi
     
     # -W ignore suppresses benign RuntimeWarning about module import order
+    # Enable pipefail to capture Python exit code through tee
+    set -o pipefail
     if python -W "ignore::RuntimeWarning:runpy" -m modules.training.train \
         --data-yaml "${DATA_YAML}" \
         --model "${YOLO_MODEL}" \
@@ -550,12 +552,31 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
         --class-weights "${CLASS_WEIGHTS_JSON}" \
         --log-dir "${EXPERIMENT_LOG_DIR:-}" 2>&1 | tee "${TRAINING_OUTPUT_FILE}"; then
         
-        SUCCESSFUL_RUNS+=("${RUN_ID}")
-        print_success "Run ${RUN_ID} trained successfully!"
-        print_success "Saved to: ${OUTPUT_DIR}/${EXP_NAME}"
-        
-        if [ "$LOGGING_ENABLED" = true ]; then
-            log_info "Training completed successfully for ${RUN_ID}"
+        # Double-check for OOM or other errors in output (pipefail may not catch all cases)
+        if grep -q "OutOfMemoryError\|CUDA out of memory\|HIP out of memory\|RuntimeError:\|Exception:" "${TRAINING_OUTPUT_FILE}" 2>/dev/null; then
+            # False positive - training actually failed
+            FAILED_RUNS+=("${RUN_ID}")
+            print_error "Run ${RUN_ID} failed with error (detected in output)!"
+            
+            if grep -q "OutOfMemoryError\|out of memory" "${TRAINING_OUTPUT_FILE}" 2>/dev/null; then
+                print_error "  -> GPU Out of Memory error detected"
+                print_warning "  Suggestions:"
+                print_warning "    - Reduce batch_size (current: ${BATCH_SIZE})"
+                print_warning "    - Reduce img_size (current: ${IMG_SIZE})"
+                print_warning "    - Use smaller model (current: ${YOLO_MODEL})"
+            fi
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_error "Training failed for ${RUN_ID} (error detected in output)"
+            fi
+        else
+            SUCCESSFUL_RUNS+=("${RUN_ID}")
+            print_success "Run ${RUN_ID} trained successfully!"
+            print_success "Saved to: ${OUTPUT_DIR}/${EXP_NAME}"
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_info "Training completed successfully for ${RUN_ID}"
+            fi
         fi
         
         # Copy logs and trained model to dataset-specific folders
