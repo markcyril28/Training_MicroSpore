@@ -169,11 +169,41 @@ append_training_output_to_full_log() {
 #===============================================================================
 
 # Get GPU stats as CSV line
+# Supports both NVIDIA (nvidia-smi) and AMD (rocm-smi) GPUs
 get_gpu_stats() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    # Try AMD ROCm first (for AMD GPUs like MI210)
+    if command -v rocm-smi &> /dev/null; then
+        # rocm-smi output format varies, parse carefully
+        rocm-smi --showuse --showmemuse --showtemp --showpower --csv 2>/dev/null | tail -n +2 | while read line; do
+            # CSV columns: GPU, Use %, Mem Use %, Temp, Power
+            local gpu_id=$(echo "$line" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local gpu_util=$(echo "$line" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
+            local mem_pct=$(echo "$line" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
+            local temp=$(echo "$line" | cut -d',' -f4 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local power=$(echo "$line" | cut -d',' -f5 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            # Get memory info separately
+            local mem_info=$(rocm-smi --showmeminfo vram --csv 2>/dev/null | tail -n +2 | head -1)
+            local mem_used=$(echo "$mem_info" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local mem_total=$(echo "$mem_info" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            # Convert bytes to MB if needed
+            if [ -n "$mem_used" ] && [ "$mem_used" -gt 1000000000 ] 2>/dev/null; then
+                mem_used=$((mem_used / 1048576))
+                mem_total=$((mem_total / 1048576))
+            fi
+            
+            echo "${timestamp},${gpu_id},AMD GPU,${gpu_util:-0},${mem_used:-0},${mem_total:-0},${mem_pct:-0},${temp:-0},${power:-0}"
+        done
+        return
+    fi
+    
+    # Fall back to NVIDIA
     if command -v nvidia-smi &> /dev/null; then
         nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw \
             --format=csv,noheader,nounits 2>/dev/null | while read line; do
-            local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
             # Use sed to trim whitespace (safer than xargs for special characters)
             local gpu_id=$(echo "$line" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             local gpu_name=$(echo "$line" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
