@@ -553,7 +553,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
         --log-dir "${EXPERIMENT_LOG_DIR:-}" 2>&1 | tee "${TRAINING_OUTPUT_FILE}"; then
         
         # Double-check for OOM or other errors in output (pipefail may not catch all cases)
-        if grep -q "OutOfMemoryError\|CUDA out of memory\|HIP out of memory\|RuntimeError:\|Exception:" "${TRAINING_OUTPUT_FILE}" 2>/dev/null; then
+        if grep -q "OutOfMemoryError\|CUDA out of memory\|HIP out of memory\|RuntimeError:\|ZeroDivisionError\|Exception:" "${TRAINING_OUTPUT_FILE}" 2>/dev/null; then
             # False positive - training actually failed
             FAILED_RUNS+=("${RUN_ID}")
             print_error "Run ${RUN_ID} failed with error (detected in output)!"
