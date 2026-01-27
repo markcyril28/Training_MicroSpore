@@ -52,7 +52,7 @@ device:
 # Self-Play Settings
 # -----------------------------------------------------------------------------
 selfplay:
-  cpu_workers: 48                     # Number of CPU workers for self-play
+  cpu_workers: 32                     # Number of CPU workers for self-play
   games_per_epoch: 2048               # Number of games to generate per epoch
   difficulties:                       # List of difficulties to cycle through
     - "easy"
@@ -82,7 +82,7 @@ dataloader:
   pin_memory: true                    # Pin memory for faster GPU transfer
   prefetch_factor: 3                  # Batches to prefetch per worker
   
-  # RAM Caching (see IMPROVEMENTS.md)
+  # RAM Caching
   ram_cache:
     enabled: true                     # Enable RAM caching for pre-tensorized data
     threshold_gb: 16.0                # Minimum available RAM (GB) to enable caching
@@ -139,7 +139,7 @@ profiles:
         enabled: true
         dtype: "bfloat16"
     selfplay:
-      cpu_workers: 48
+      cpu_workers: 32
       games_per_epoch: 2048
     training:
       batch_size: 1024
@@ -150,38 +150,3 @@ profiles:
         enabled: true
         threshold_gb: 64.0
 
-  # Local development (NVIDIA RTX, 8GB+ VRAM)
-  local:
-    device:
-      type: "cuda"
-      amp:
-        enabled: true
-        dtype: "float16"
-    selfplay:
-      cpu_workers: 8
-      games_per_epoch: 100
-    training:
-      batch_size: 512
-      learning_rate: 4.0e-4
-    dataloader:
-      num_workers: 4
-      ram_cache:
-        enabled: false
-
-  # CPU-only training
-  cpu:
-    device:
-      type: "cpu"
-      amp:
-        enabled: false
-    selfplay:
-      cpu_workers: 4
-      games_per_epoch: 50
-    training:
-      batch_size: 64
-      learning_rate: 1.0e-4
-    dataloader:
-      num_workers: 2
-      ram_cache:
-        enabled: true
-        threshold_gb: 8.0

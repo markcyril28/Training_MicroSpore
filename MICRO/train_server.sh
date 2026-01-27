@@ -30,7 +30,7 @@ CONFIG_FILE="config/training_config_server.yaml"
 # CONFIG_PROFILE="server"
 # CONFIG_PROFILE="local"
 # CONFIG_PROFILE="cpu"
-CONFIG_PROFILE="server"
+CONFIG_PROFILE=""
 
 # -----------------------------------------------------------------------------
 # Resume Settings (can override config file)
