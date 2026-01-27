@@ -95,10 +95,10 @@ CONFIG_SCRIPTS=(
     #"03_img_size_combination_a.sh"              # Image size variations
     #"03_img_size_combination_b.sh"
     #"03_img_size_combination_c.sh"
-    #"04_class_balancing_combination.sh"      # Class balancing strategies
-    "04_class_balancing_combination_continue.sh"  # Continue from trained model
-    #"05_optimizer_combination.sh"            # Optimizer variations
-    #"z_epoch_combination.sh"                # Epoch variations
+    #"04_class_balancing_combination.sh"            # Class balancing strategies
+    "04_class_balancing_combination_continue.sh"    # Continue from trained model
+    #"05_optimizer_combination.sh"                  # Optimizer variations
+    #"z_epoch_combination.sh"                       # Epoch variations
 )
 
 # Device Configuration (applies to all configs)

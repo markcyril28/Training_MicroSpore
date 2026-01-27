@@ -161,7 +161,7 @@ PATIENCE_LIST=(
 )
 
 BATCH_SIZE_LIST=(
-    8                     # low (for debugging)
+    4                     # low (for debugging)
     #16                    # moderate
     #32                    # standard for high-end GPUs
     #64                      # optimal for MI210 64GB HBM2e (maximum throughput)
