@@ -33,9 +33,19 @@ from torch.amp import GradScaler, autocast
 # Note: Check ROCm support for TF32 equivalent on AMD GPUs
 torch.set_float32_matmul_precision('medium')
 
+# Configure torch.compile CUDAGraph settings to avoid overhead from dynamic shapes
+# This prevents recording too many graphs for varying input sizes
+try:
+    import torch._inductor.config as inductor_config
+    inductor_config.triton.cudagraph_skip_dynamic_graphs = True
+    inductor_config.triton.cudagraph_dynamic_shape_warn_limit = None
+except (ImportError, AttributeError):
+    pass  # Older PyTorch versions may not have this config
+
 # Suppress torch.compile inductor warnings
 warnings.filterwarnings('ignore', message='.*TensorFloat32.*')
 warnings.filterwarnings('ignore', message='.*max_autotune_gemm.*')
+warnings.filterwarnings('ignore', message='.*CUDAGraph.*dynamic shapes.*')
 
 from .model import MoveScorerNet, create_model, save_model, load_model
 from .replay import ReplayBuffer

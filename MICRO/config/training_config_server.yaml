@@ -80,14 +80,14 @@ dataloader:
   # RAM Caching (1TB available - enables massive speedup)
   ram_cache:
     enabled: true                     # Pre-tensorize data in RAM (eliminates CPU bottleneck)
-    threshold_gb: 64.0                # Require 64GB free to enable caching
+    threshold_gb: 128.0                # Require 64GB free to enable caching
     cache_file: null                  # Optional: "data/cache/dataset.pt" to persist
 
 # -----------------------------------------------------------------------------
 # Model Testing Settings (ML vs Algorithm)
 # -----------------------------------------------------------------------------
 testing:
-  enabled: false                      # Disable for maximum training throughput
+  enabled: true                      # Disable for maximum training throughput
   every_n_steps: 5000                 # Test every 5000 steps when enabled
   num_games: 50                       # Games per evaluation
   difficulty: "medium"                # Algorithm difficulty for testing
