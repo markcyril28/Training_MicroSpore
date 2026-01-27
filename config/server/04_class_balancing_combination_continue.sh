@@ -492,8 +492,8 @@ CACHE_LIST=(
 )
 
 AMP_LIST=(
-    true                    # mixed precision (recommended - faster on MI210)
-    # false                 # full precision (use if numerical stability issues)
+    #true                    # mixed precision (recommended - faster on MI210)
+    false                 # full precision (use if numerical stability issues)
 )
 
 FREEZE_LIST=(
