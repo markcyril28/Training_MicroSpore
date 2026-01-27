@@ -39,6 +39,10 @@ try:
     import torch._inductor.config as inductor_config
     inductor_config.triton.cudagraph_skip_dynamic_graphs = True
     inductor_config.triton.cudagraph_dynamic_shape_warn_limit = None
+    # Silence the "skipping cudagraphs" info messages
+    import logging
+    logging.getLogger("torch._inductor.compile_fx").setLevel(logging.WARNING)
+    logging.getLogger("torch._dynamo").setLevel(logging.WARNING)
 except (ImportError, AttributeError):
     pass  # Older PyTorch versions may not have this config
 
@@ -46,6 +50,7 @@ except (ImportError, AttributeError):
 warnings.filterwarnings('ignore', message='.*TensorFloat32.*')
 warnings.filterwarnings('ignore', message='.*max_autotune_gemm.*')
 warnings.filterwarnings('ignore', message='.*CUDAGraph.*dynamic shapes.*')
+warnings.filterwarnings('ignore', message='.*skipping cudagraphs.*')
 
 from .model import MoveScorerNet, create_model, save_model, load_model
 from .replay import ReplayBuffer
