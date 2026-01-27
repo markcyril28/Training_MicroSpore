@@ -1570,6 +1570,78 @@ def run_training(
         )
         print(f"[OptimizationLogger] Tracking detailed optimization metrics")
     
+    # ===========================================================================
+    # GPU MEMORY CHECK: Estimate memory requirements and warn if likely to OOM
+    # ===========================================================================
+    try:
+        import torch
+        if torch.cuda.is_available():
+            gpu_mem_total = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # GB
+            
+            # Estimate memory requirements based on model and image size
+            # These are rough estimates based on empirical data
+            model_mem_estimates = {
+                'yolov8n': 0.5, 'yolo11n': 0.5,
+                'yolov8s': 1.0, 'yolo11s': 1.0,
+                'yolov8m': 2.0, 'yolo11m': 2.0,
+                'yolov8l': 4.0, 'yolo11l': 4.0,
+                'yolov8x': 8.0, 'yolo11x': 8.0,
+            }
+            
+            # Get base model memory (default to medium if unknown)
+            model_base = model_name.replace('.pt', '').lower()
+            base_mem = 2.0  # Default
+            for key, val in model_mem_estimates.items():
+                if key in model_base:
+                    base_mem = val
+                    break
+            
+            # Scale by image size (quadratic) and batch size (linear)
+            img_scale = (img_size / 640) ** 2
+            estimated_mem = base_mem * img_scale * batch_size
+            
+            # Add overhead for gradients, optimizer states, etc. (roughly 3x)
+            estimated_total = estimated_mem * 3
+            
+            # Check if we have enough memory (with 10% safety margin)
+            if estimated_total > gpu_mem_total * 0.9:
+                print()
+                print("=" * 70)
+                print("  ⚠️  GPU MEMORY WARNING")
+                print("=" * 70)
+                print(f"  Estimated memory needed: ~{estimated_total:.1f} GB")
+                print(f"  Available GPU memory:    {gpu_mem_total:.1f} GB")
+                print()
+                print("  Your configuration may cause Out-of-Memory (OOM) errors.")
+                print("  Consider these adjustments:")
+                print()
+                
+                # Suggest reduced batch size
+                safe_batch = max(1, int(batch_size * (gpu_mem_total * 0.8) / estimated_total))
+                if safe_batch < batch_size:
+                    print(f"    • Reduce batch_size: {batch_size} → {safe_batch}")
+                
+                # Suggest reduced image size
+                if img_size > 640:
+                    safe_img = 640
+                    print(f"    • Reduce img_size: {img_size} → {safe_img}")
+                
+                # Suggest smaller model
+                if 'x' in model_base:
+                    print(f"    • Use smaller model: yolov8l or yolov8m instead of yolov8x")
+                elif 'l' in model_base:
+                    print(f"    • Use smaller model: yolov8m instead of yolov8l")
+                
+                print()
+                print("  Set environment variable for better memory allocation:")
+                print("    export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True")
+                print("=" * 70)
+                print()
+            else:
+                print(f"[GPU Memory] Estimated: ~{estimated_total:.1f}GB / Available: {gpu_mem_total:.1f}GB ✓")
+    except Exception as e:
+        pass  # Non-critical check, continue if it fails
+    
     # Load or download model
     model = load_or_download_model(model_name, Path(weights_dir))
     
