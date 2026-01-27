@@ -28,8 +28,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.amp import GradScaler, autocast
 
-# Enable TF32 for better performance on Ampere+ GPUs
-torch.set_float32_matmul_precision('high')
+# Enable TF32/medium precision for better performance on Ampere+ GPUs
+# 'medium' allows more aggressive use of TF32 tensor cores
+# Note: Check ROCm support for TF32 equivalent on AMD GPUs
+torch.set_float32_matmul_precision('medium')
 
 # Suppress torch.compile inductor warnings
 warnings.filterwarnings('ignore', message='.*TensorFloat32.*')
@@ -1112,9 +1114,118 @@ def load_training_stats(stats_file: str = 'models/training_stats.json') -> Optio
         return None
 
 
+def load_config_from_yaml(config_path: str, profile: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Load training configuration from a YAML file.
+    
+    Args:
+        config_path: Path to the YAML config file
+        profile: Optional profile name to apply (e.g., 'server', 'local', 'cpu')
+    
+    Returns:
+        Dictionary of configuration values
+    """
+    import yaml
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Apply profile if specified
+    if profile and 'profiles' in config:
+        if profile in config['profiles']:
+            profile_config = config['profiles'][profile]
+            # Deep merge profile into config
+            def deep_merge(base: dict, override: dict) -> dict:
+                result = base.copy()
+                for key, value in override.items():
+                    if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                        result[key] = deep_merge(result[key], value)
+                    else:
+                        result[key] = value
+                return result
+            config = deep_merge(config, profile_config)
+            print(f"Applied profile: {profile}")
+        else:
+            print(f"Warning: Profile '{profile}' not found. Available: {list(config['profiles'].keys())}")
+    
+    return config
+
+
+def config_from_yaml(yaml_config: Dict[str, Any]) -> TrainingConfig:
+    """
+    Convert YAML config dictionary to TrainingConfig dataclass.
+    
+    Args:
+        yaml_config: Dictionary loaded from YAML file
+    
+    Returns:
+        TrainingConfig instance
+    """
+    device_cfg = yaml_config.get('device', {})
+    selfplay_cfg = yaml_config.get('selfplay', {})
+    training_cfg = yaml_config.get('training', {})
+    dataloader_cfg = yaml_config.get('dataloader', {})
+    testing_cfg = yaml_config.get('testing', {})
+    paths_cfg = yaml_config.get('paths', {})
+    resume_cfg = yaml_config.get('resume', {})
+    time_cfg = yaml_config.get('time_limit', {})
+    
+    # Parse stop time if duration is set
+    stop_time = None
+    if time_cfg.get('enabled') and time_cfg.get('duration'):
+        stop_time = parse_duration(time_cfg['duration'])
+    
+    return TrainingConfig(
+        # Device settings
+        device=device_cfg.get('type', 'cuda'),
+        amp=device_cfg.get('amp', {}).get('enabled', True),
+        amp_dtype=device_cfg.get('amp', {}).get('dtype', 'float16'),
+        compile_model=device_cfg.get('compile', {}).get('enabled', True),
+        compile_mode=device_cfg.get('compile', {}).get('mode', 'reduce-overhead'),
+        # Self-play settings
+        cpu_workers=selfplay_cfg.get('cpu_workers', 10),
+        selfplay_games=selfplay_cfg.get('games_per_epoch', 500),
+        selfplay_focus_side=selfplay_cfg.get('focus_side', 'both'),
+        selfplay_opponent_focus=selfplay_cfg.get('opponent_focus', 'both'),
+        selfplay_difficulties=selfplay_cfg.get('difficulties', ['medium']),
+        selfplay_noise_prob=selfplay_cfg.get('noise_prob', 0.1),
+        selfplay_max_moves=selfplay_cfg.get('max_moves_per_game', 200),
+        # Training settings
+        batch_size=training_cfg.get('batch_size', 256),
+        learning_rate=training_cfg.get('learning_rate', 3e-4),
+        weight_decay=training_cfg.get('weight_decay', 1e-5),
+        grad_clip_norm=training_cfg.get('grad_clip_norm'),
+        train_steps=training_cfg.get('train_steps', 10000),
+        checkpoint_every=training_cfg.get('checkpoint_every', 1000),
+        # DataLoader settings
+        dataloader_workers=dataloader_cfg.get('num_workers', 4),
+        pin_memory=dataloader_cfg.get('pin_memory', True),
+        # Testing settings
+        test_vs_algo=testing_cfg.get('enabled', True),
+        test_every=testing_cfg.get('every_n_steps', 5000),
+        test_games=testing_cfg.get('num_games', 50),
+        test_difficulty=testing_cfg.get('difficulty', 'medium'),
+        # Paths
+        checkpoint_dir=paths_cfg.get('checkpoint_dir', 'models/checkpoints'),
+        latest_path=paths_cfg.get('latest_model', 'models/latest.pt'),
+        replay_dir=paths_cfg.get('replay_dir', 'data/replay'),
+        log_dir=paths_cfg.get('log_dir', 'logs'),
+        stats_file=paths_cfg.get('stats_file', 'models/training_stats.json'),
+        # Resume
+        resume=resume_cfg.get('checkpoint_path'),
+        stop_time=stop_time,
+    )
+
+
 def main():
     """Main entry point for command-line training."""
     parser = argparse.ArgumentParser(description='Train Filipino Micro ML model')
+
+    # Config file support
+    parser.add_argument('--config', type=str, default=None,
+                       help='Path to YAML config file (e.g., config/training_config.yaml)')
+    parser.add_argument('--profile', type=str, default=None,
+                       help='Config profile to use (e.g., server, local, cpu)')
 
     # Device settings
     parser.add_argument('--device', default='cuda', choices=['cuda', 'cpu'],
@@ -1189,66 +1300,97 @@ def main():
 
     args = parser.parse_args()
 
-    # Handle --resume-latest
-    resume_path = args.resume
-    if args.resume_latest:
-        import glob
-        import re
-        checkpoint_dir = 'models/checkpoints'
-        pattern = os.path.join(checkpoint_dir, 'model_step_*.pt')
-        checkpoints = glob.glob(pattern)
-        if checkpoints:
-            # Sort by step number to find the latest
-            def get_step(path):
-                match = re.search(r'model_step_(\d+)\.pt$', path)
-                return int(match.group(1)) if match else 0
-            checkpoints.sort(key=get_step)
-            resume_path = checkpoints[-1]
-            print(f'Resuming from latest checkpoint: {resume_path}')
-        else:
-            print('No checkpoints found in models/checkpoints/, starting fresh.')
-            resume_path = None
+    # If config file provided, load it and use as base
+    if args.config:
+        print(f"Loading config from: {args.config}")
+        yaml_config = load_config_from_yaml(args.config, args.profile)
+        config = config_from_yaml(yaml_config)
+        
+        # Override with command line arguments if explicitly provided
+        # (Only override if the user explicitly set the argument)
+        if args.resume:
+            config.resume = args.resume
+        elif args.resume_latest:
+            import glob
+            import re
+            pattern = os.path.join(config.checkpoint_dir, 'model_step_*.pt')
+            checkpoints = glob.glob(pattern)
+            if checkpoints:
+                def get_step(path):
+                    match = re.search(r'model_step_(\d+)\.pt$', path)
+                    return int(match.group(1)) if match else 0
+                checkpoints.sort(key=get_step)
+                config.resume = checkpoints[-1]
+                print(f'Resuming from latest checkpoint: {config.resume}')
+        
+        if args.train_duration:
+            config.stop_time = parse_duration(args.train_duration)
+        
+        # Print loaded config summary
+        print(f"Config loaded: batch_size={config.batch_size}, lr={config.learning_rate}, "
+              f"workers={config.dataloader_workers}, amp={config.amp}")
+    else:
+        # Use command line arguments only
+        # Handle --resume-latest
+        resume_path = args.resume
+        if args.resume_latest:
+            import glob
+            import re
+            checkpoint_dir = 'models/checkpoints'
+            pattern = os.path.join(checkpoint_dir, 'model_step_*.pt')
+            checkpoints = glob.glob(pattern)
+            if checkpoints:
+                # Sort by step number to find the latest
+                def get_step(path):
+                    match = re.search(r'model_step_(\d+)\.pt$', path)
+                    return int(match.group(1)) if match else 0
+                checkpoints.sort(key=get_step)
+                resume_path = checkpoints[-1]
+                print(f'Resuming from latest checkpoint: {resume_path}')
+            else:
+                print('No checkpoints found in models/checkpoints/, starting fresh.')
+                resume_path = None
 
-    # Parse train duration
-    stop_time = parse_duration(args.train_duration) if args.train_duration else None
-    if stop_time:
-        print(f'Training duration: {args.train_duration}')
-        print(f'Training will stop at: {stop_time.strftime("%Y-%m-%d %H:%M:%S")}')
+        # Parse train duration
+        stop_time = parse_duration(args.train_duration) if args.train_duration else None
+        if stop_time:
+            print(f'Training duration: {args.train_duration}')
+            print(f'Training will stop at: {stop_time.strftime("%Y-%m-%d %H:%M:%S")}')
 
-    config = TrainingConfig(
-        # Device settings
-        compile_mode=args.compile_mode,
-        device=args.device,
-        amp=not args.no_amp,
-        amp_dtype=args.amp_dtype,
-        compile_model=args.compile_model,
-        # Self-play settings
-        cpu_workers=args.cpu_workers,
-        selfplay_games=args.selfplay_games,
-        selfplay_focus_side=args.focus_side,
-        selfplay_opponent_focus=args.opponent_focus,
-        selfplay_difficulties=[d.strip() for d in args.selfplay_difficulties.split(',')],
-        selfplay_noise_prob=args.noise_prob,
-        selfplay_max_moves=args.max_moves,
-        # Training settings
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        grad_clip_norm=args.grad_clip_norm if args.grad_clip_norm > 0 else None,
-        train_steps=args.train_steps,
-        checkpoint_every=args.checkpoint_every,
-        # DataLoader settings
-        dataloader_workers=args.dataloader_workers,
-        pin_memory=args.pin_memory,
-        # Model testing settings
-        test_vs_algo=args.test_vs_algo,
-        test_every=args.test_every,
-        test_games=args.test_games,
-        test_difficulty=args.test_difficulty,
-        # Resume settings
-        resume=resume_path,
-        stop_time=stop_time,
-    )
+        config = TrainingConfig(
+            # Device settings
+            compile_mode=args.compile_mode,
+            device=args.device,
+            amp=not args.no_amp,
+            amp_dtype=args.amp_dtype,
+            compile_model=args.compile_model,
+            # Self-play settings
+            cpu_workers=args.cpu_workers,
+            selfplay_games=args.selfplay_games,
+            selfplay_focus_side=args.focus_side,
+            selfplay_opponent_focus=args.opponent_focus,
+            selfplay_difficulties=[d.strip() for d in args.selfplay_difficulties.split(',')],
+            selfplay_noise_prob=args.noise_prob,
+            selfplay_max_moves=args.max_moves,
+            # Training settings
+            batch_size=args.batch_size,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            grad_clip_norm=args.grad_clip_norm if args.grad_clip_norm > 0 else None,
+            train_steps=args.train_steps,
+            checkpoint_every=args.checkpoint_every,
+            # DataLoader settings
+            dataloader_workers=args.dataloader_workers,
+            pin_memory=args.pin_memory,
+            # Model testing settings
+            test_vs_algo=args.test_vs_algo,
+            test_every=args.test_every,
+            test_games=args.test_games,
+            test_difficulty=args.test_difficulty,
+            # Resume settings
+            resume=resume_path,
+            stop_time=stop_time,
+        )
 
     trainer = Trainer(config)
     trainer.train()

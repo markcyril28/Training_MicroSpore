@@ -1,16 +1,37 @@
 """Dataset for training the move scorer model."""
 
+import os
 import random
-from typing import List, Tuple, Iterator
+import psutil
+from pathlib import Path
+from typing import List, Tuple, Iterator, Optional
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader, IterableDataset
+from torch.utils.data import Dataset, DataLoader, IterableDataset, TensorDataset
 
 from ...types import Move, Player
 from ...game_state import GameState
 from ...board import Board
 from .replay import ReplayBuffer, ReplayEntry
 from .move_encoder import encode_board, encode_moves, MOVE_FEATURE_SIZE, BOARD_PLANES
+
+
+def get_available_ram_gb() -> float:
+    """Get available system RAM in GB."""
+    try:
+        mem = psutil.virtual_memory()
+        return mem.available / (1024 ** 3)
+    except Exception:
+        return 0.0
+
+
+def get_total_ram_gb() -> float:
+    """Get total system RAM in GB."""
+    try:
+        mem = psutil.virtual_memory()
+        return mem.total / (1024 ** 3)
+    except Exception:
+        return 0.0
 
 
 class MicroDataset(Dataset):
@@ -47,6 +68,190 @@ class MicroDataset(Dataset):
             torch.from_numpy(move_features),
             entry.chosen_index,
         )
+
+
+def preprocess_entries_to_tensors(
+    entries: List[ReplayEntry],
+    max_moves_per_sample: int = 64,
+    show_progress: bool = True,
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Pre-process replay entries into pre-computed tensors for fast training.
+    
+    This eliminates the CPU bottleneck of parsing JSON and reconstructing
+    GameState objects during training.
+    
+    Args:
+        entries: List of replay entries to process
+        max_moves_per_sample: Maximum number of moves to pad to (for fixed-size batching)
+        show_progress: Whether to print progress updates
+    
+    Returns:
+        Tuple of:
+        - boards: (N, BOARD_PLANES, 8, 8) float32 tensor
+        - move_features: (N, max_moves, MOVE_FEATURE_SIZE) float32 tensor (padded)
+        - move_counts: (N,) int64 tensor (actual number of moves per sample)
+        - targets: (N,) int64 tensor (chosen move index)
+    """
+    n = len(entries)
+    if n == 0:
+        return (
+            torch.empty(0, BOARD_PLANES, 8, 8),
+            torch.empty(0, max_moves_per_sample, MOVE_FEATURE_SIZE),
+            torch.empty(0, dtype=torch.long),
+            torch.empty(0, dtype=torch.long),
+        )
+    
+    # Pre-allocate arrays
+    boards = np.zeros((n, BOARD_PLANES, 8, 8), dtype=np.float32)
+    all_move_features = np.zeros((n, max_moves_per_sample, MOVE_FEATURE_SIZE), dtype=np.float32)
+    move_counts = np.zeros(n, dtype=np.int64)
+    targets = np.zeros(n, dtype=np.int64)
+    
+    log_interval = max(1, n // 20)  # Log every 5%
+    
+    for i, entry in enumerate(entries):
+        if show_progress and i > 0 and i % log_interval == 0:
+            print(f"  Pre-processing: {i}/{n} ({100*i/n:.1f}%)")
+        
+        # Reconstruct game state
+        state = GameState.from_compact(entry.state)
+        
+        # Encode board
+        boards[i] = encode_board(state)
+        
+        # Reconstruct moves and encode them
+        moves = [Move.from_dict(m) for m in entry.legal_moves]
+        move_feats = encode_moves(state, moves)
+        
+        num_moves = min(move_feats.shape[0], max_moves_per_sample)
+        all_move_features[i, :num_moves] = move_feats[:num_moves]
+        move_counts[i] = num_moves
+        targets[i] = min(entry.chosen_index, num_moves - 1) if num_moves > 0 else 0
+    
+    if show_progress:
+        print(f"  Pre-processing complete: {n} entries")
+    
+    return (
+        torch.from_numpy(boards),
+        torch.from_numpy(all_move_features),
+        torch.from_numpy(move_counts),
+        torch.from_numpy(targets),
+    )
+
+
+class CachedTensorDataset(Dataset):
+    """
+    Dataset backed by pre-computed tensors in RAM.
+    
+    This is the fastest dataset implementation when you have sufficient RAM
+    to hold all training data. Eliminates all CPU preprocessing during training.
+    """
+    
+    def __init__(
+        self,
+        boards: torch.Tensor,
+        move_features: torch.Tensor,
+        move_counts: torch.Tensor,
+        targets: torch.Tensor,
+    ):
+        """
+        Args:
+            boards: (N, BOARD_PLANES, 8, 8) tensor
+            move_features: (N, max_moves, MOVE_FEATURE_SIZE) tensor
+            move_counts: (N,) tensor with actual move counts
+            targets: (N,) tensor with target indices
+        """
+        self.boards = boards
+        self.move_features = move_features
+        self.move_counts = move_counts
+        self.targets = targets
+    
+    def __len__(self) -> int:
+        return len(self.boards)
+    
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, int]:
+        """
+        Returns:
+            - board: (BOARD_PLANES, 8, 8) tensor
+            - move_features: (max_moves, MOVE_FEATURE_SIZE) tensor
+            - move_count: int (actual number of valid moves)
+            - target: int (chosen move index)
+        """
+        return (
+            self.boards[idx],
+            self.move_features[idx],
+            int(self.move_counts[idx]),
+            int(self.targets[idx]),
+        )
+    
+    @classmethod
+    def from_entries(
+        cls,
+        entries: List[ReplayEntry],
+        max_moves_per_sample: int = 64,
+        show_progress: bool = True,
+    ) -> 'CachedTensorDataset':
+        """Create a CachedTensorDataset from replay entries."""
+        boards, move_features, move_counts, targets = preprocess_entries_to_tensors(
+            entries, max_moves_per_sample, show_progress
+        )
+        return cls(boards, move_features, move_counts, targets)
+    
+    def save(self, path: str) -> None:
+        """Save the cached tensors to a .pt file."""
+        torch.save({
+            'boards': self.boards,
+            'move_features': self.move_features,
+            'move_counts': self.move_counts,
+            'targets': self.targets,
+        }, path)
+        print(f"Saved cached dataset to {path}")
+    
+    @classmethod
+    def load(cls, path: str) -> 'CachedTensorDataset':
+        """Load cached tensors from a .pt file."""
+        data = torch.load(path, weights_only=True)
+        return cls(
+            data['boards'],
+            data['move_features'],
+            data['move_counts'],
+            data['targets'],
+        )
+
+
+def collate_cached_batch(
+    batch: List[Tuple[torch.Tensor, torch.Tensor, int, int]]
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Collate function for CachedTensorDataset.
+    
+    Handles variable-length move features by using the pre-padded tensors.
+    
+    Returns:
+    - boards: (batch_size, BOARD_PLANES, 8, 8)
+    - all_move_features: (total_moves, MOVE_FEATURE_SIZE) - flattened
+    - move_counts: (batch_size,) - number of moves per sample
+    - targets: (batch_size,) - index of chosen move for each sample
+    """
+    boards = []
+    all_move_features = []
+    move_counts = []
+    targets = []
+    
+    for board, move_feats, move_count, target in batch:
+        boards.append(board)
+        # Only take the valid moves (up to move_count)
+        all_move_features.append(move_feats[:move_count])
+        move_counts.append(move_count)
+        targets.append(target)
+    
+    return (
+        torch.stack(boards),
+        torch.cat(all_move_features, dim=0),
+        torch.tensor(move_counts, dtype=torch.long),
+        torch.tensor(targets, dtype=torch.long),
+    )
 
 
 class StreamingMicroDataset(IterableDataset):
@@ -116,8 +321,69 @@ def create_dataloader(
     shuffle: bool = True,
     num_workers: int = 0,
     pin_memory: bool = True,
+    use_ram_cache: bool = True,
+    ram_threshold_gb: float = 16.0,
 ) -> DataLoader:
-    """Create a DataLoader from replay entries."""
+    """
+    Create a DataLoader from replay entries.
+    
+    Args:
+        entries: List of replay entries
+        batch_size: Batch size
+        shuffle: Whether to shuffle data
+        num_workers: Number of worker processes
+        pin_memory: Whether to pin memory for faster GPU transfer
+        use_ram_cache: If True and sufficient RAM available, pre-process to tensors
+        ram_threshold_gb: Minimum available RAM (GB) required for caching
+    
+    Returns:
+        DataLoader instance
+    """
+    available_ram = get_available_ram_gb()
+    total_ram = get_total_ram_gb()
+    
+    # Estimate memory needed for cached dataset
+    # Each entry: ~5*8*8*4 (board) + 64*8*4 (moves) + 16 (counts/targets) ≈ 3.5 KB
+    estimated_size_gb = len(entries) * 3.5 / (1024 ** 2)
+    
+    # Use RAM caching if:
+    # 1. Explicitly enabled
+    # 2. Sufficient RAM available (with safety margin)
+    # 3. Total RAM is high (e.g., server with 1TB RAM)
+    should_cache = (
+        use_ram_cache 
+        and available_ram > ram_threshold_gb 
+        and (available_ram > estimated_size_gb * 2 or total_ram > 64)
+    )
+    
+    if should_cache:
+        print(f"RAM Caching enabled ({available_ram:.1f}GB available, {estimated_size_gb:.2f}GB needed)")
+        print("Pre-processing entries to tensors...")
+        
+        cached_dataset = CachedTensorDataset.from_entries(
+            entries, 
+            max_moves_per_sample=64, 
+            show_progress=True
+        )
+        
+        # With cached data, we can reduce workers since the bottleneck is eliminated
+        # Memory copy is faster than Python object creation
+        effective_workers = min(num_workers, 2) if num_workers > 0 else 0
+        
+        return DataLoader(
+            cached_dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=effective_workers,
+            collate_fn=collate_cached_batch,
+            pin_memory=pin_memory and effective_workers > 0,
+            persistent_workers=effective_workers > 0 and len(entries) > batch_size * 100,
+            prefetch_factor=2 if effective_workers > 0 else None,
+            drop_last=True,
+        )
+    
+    # Fall back to standard dataset
+    print(f"Using standard dataset (available RAM: {available_ram:.1f}GB)")
     dataset = MicroDataset(entries)
     
     # persistent_workers can cause hangs - only use when we have enough batches
@@ -146,6 +412,63 @@ def create_dataloader(
         persistent_workers=use_persistent,
         prefetch_factor=prefetch,
         drop_last=True,  # Drop incomplete last batch for consistent batch size
+    )
+
+
+def create_cached_dataloader(
+    entries: List[ReplayEntry],
+    batch_size: int = 64,
+    shuffle: bool = True,
+    num_workers: int = 2,
+    pin_memory: bool = True,
+    cache_path: Optional[str] = None,
+) -> DataLoader:
+    """
+    Create a DataLoader with forced RAM caching.
+    
+    This function always pre-processes data into tensors, regardless of
+    available RAM. Use when you know you have sufficient memory.
+    
+    Args:
+        entries: List of replay entries
+        batch_size: Batch size
+        shuffle: Whether to shuffle data
+        num_workers: Number of worker processes (reduced automatically)
+        pin_memory: Whether to pin memory
+        cache_path: Optional path to save/load cached tensors
+    
+    Returns:
+        DataLoader instance
+    """
+    # Try to load from cache first
+    if cache_path and Path(cache_path).exists():
+        print(f"Loading cached dataset from {cache_path}")
+        cached_dataset = CachedTensorDataset.load(cache_path)
+    else:
+        print("Pre-processing entries to tensors (forced RAM caching)...")
+        cached_dataset = CachedTensorDataset.from_entries(
+            entries,
+            max_moves_per_sample=64,
+            show_progress=True,
+        )
+        
+        # Save cache if path provided
+        if cache_path:
+            cached_dataset.save(cache_path)
+    
+    # Reduce workers since data is already in memory
+    effective_workers = min(num_workers, 2)
+    
+    return DataLoader(
+        cached_dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=effective_workers,
+        collate_fn=collate_cached_batch,
+        pin_memory=pin_memory and effective_workers > 0,
+        persistent_workers=effective_workers > 0,
+        prefetch_factor=2 if effective_workers > 0 else None,
+        drop_last=True,
     )
 
 

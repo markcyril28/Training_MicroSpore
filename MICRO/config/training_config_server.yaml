@@ -1,0 +1,187 @@
+# =============================================================================
+# Micro Training Configuration
+# =============================================================================
+# This is the centralized configuration file for training hyperparameters.
+# It consolidates settings from train_server.sh, local_train.sh, and trainer.py.
+#
+# Usage:
+#   python -m micro.ai.ml.trainer --config config/training_config.yaml
+#
+# Override any setting via command line:
+#   python -m micro.ai.ml.trainer --config config/training_config.yaml --batch-size 512
+# =============================================================================
+
+# =============================================================================
+# SETUP CONFIGURATION
+# =============================================================================
+# SERVER SPECS (Dell Server with AMD ROCm):
+#   GPU: AMD Instinct MI210 (Aldebaran/MI200)
+#   VRAM: 64GB HBM2e
+#   RAM: 1TB DDR4
+#   Architecture: gfx90a (CDNA2)
+#   Driver: amdgpu
+#   Compute Platform: ROCm 6.x
+#   CPU Threads: 128
+# ===============================================================================
+
+#: << 'SERVER_SPECS'
+# =================================== Product Info ======================================
+# GPU[0]          : Card Model:           0x740f
+# GPU[0]          : Card Vendor:          Advanced Micro Devices, Inc. [AMD/ATI]
+# GPU[0]          : Card SKU:             D67301V
+# GPU[0]          : GFX Version:          gfx90a
+# ================================== Memory Info ========================================
+# GPU[0]          : VRAM Total Memory (B): 68702699520 (~64GB)
+# ==========================================================================================
+#SERVER_SPECS
+
+# -----------------------------------------------------------------------------
+# Device Settings
+# -----------------------------------------------------------------------------
+device:
+  type: "cuda"                        # "cuda" (ROCm/HIP or CUDA) or "cpu"
+  amp:
+    enabled: true                     # Enable automatic mixed precision
+    dtype: "bfloat16"                 # "bfloat16" (recommended for MI210) or "float16"
+  compile:
+    enabled: true                     # Enable torch.compile for faster training
+    mode: "reduce-overhead"           # "default", "reduce-overhead", "max-autotune"
+  matmul_precision: "medium"          # "highest", "high", "medium" - medium enables TF32
+
+# -----------------------------------------------------------------------------
+# Self-Play Settings
+# -----------------------------------------------------------------------------
+selfplay:
+  cpu_workers: 48                     # Number of CPU workers for self-play
+  games_per_epoch: 2048               # Number of games to generate per epoch
+  difficulties:                       # List of difficulties to cycle through
+    - "easy"
+    - "medium" 
+    - "hard"
+  focus_side: "both"                  # "white", "black", or "both"
+  opponent_focus: "both"              # "ml", "algorithm", or "both"
+  noise_prob: 0.20                    # Probability of random move for exploration
+  max_moves_per_game: 100             # Maximum moves per game
+
+# -----------------------------------------------------------------------------
+# Training Hyperparameters
+# -----------------------------------------------------------------------------
+training:
+  batch_size: 1024                    # Training batch size
+  learning_rate: 1.0e-4               # Learning rate (lower for FP32 stability)
+  weight_decay: 1.0e-5                # Weight decay for regularization
+  grad_clip_norm: 1.0                 # Gradient clipping norm (null to disable)
+  train_steps: 100000000000           # Total training steps
+  checkpoint_every: 2000              # Save checkpoint every N steps
+
+# -----------------------------------------------------------------------------
+# DataLoader Settings
+# -----------------------------------------------------------------------------
+dataloader:
+  num_workers: 16                     # Number of dataloader worker processes
+  pin_memory: true                    # Pin memory for faster GPU transfer
+  prefetch_factor: 3                  # Batches to prefetch per worker
+  
+  # RAM Caching (see IMPROVEMENTS.md)
+  ram_cache:
+    enabled: true                     # Enable RAM caching for pre-tensorized data
+    threshold_gb: 16.0                # Minimum available RAM (GB) to enable caching
+    cache_file: null                  # Optional: path to save/load cached tensors (.pt)
+
+# -----------------------------------------------------------------------------
+# Model Testing Settings (ML vs Algorithm)
+# -----------------------------------------------------------------------------
+testing:
+  enabled: false                      # Enable periodic testing against algorithm
+  every_n_steps: 5000                 # Test every N training steps
+  num_games: 50                       # Number of test games per evaluation
+  difficulty: "medium"                # Algorithm difficulty for testing
+
+# -----------------------------------------------------------------------------
+# Paths
+# -----------------------------------------------------------------------------
+paths:
+  checkpoint_dir: "models/checkpoints"
+  latest_model: "models/latest.pt"
+  replay_dir: "data/replay"
+  log_dir: "logs"
+  stats_file: "models/training_stats.json"
+
+# -----------------------------------------------------------------------------
+# Resume Settings  
+# -----------------------------------------------------------------------------
+resume:
+  enabled: true                       # Enable auto-resume from latest checkpoint
+  checkpoint_path: null               # Specific checkpoint path (null = auto-detect)
+  skip_corrupted: true                # Skip checkpoints with NaN/Inf values
+
+# -----------------------------------------------------------------------------
+# Time-based Stopping
+# -----------------------------------------------------------------------------
+time_limit:
+  enabled: true
+  duration: "2h"                      # Training duration (e.g., "2h", "1d12h", "30m")
+
+# =============================================================================
+# Hardware-Specific Profiles
+# =============================================================================
+# These are example profiles for different hardware configurations.
+# Use the --profile flag to select a profile:
+#   python -m micro.ai.ml.trainer --config config/training_config.yaml --profile server
+# =============================================================================
+
+profiles:
+  # AMD MI210 Server (64GB VRAM, 128 CPU threads, 1TB RAM)
+  server:
+    device:
+      type: "cuda"
+      amp:
+        enabled: true
+        dtype: "bfloat16"
+    selfplay:
+      cpu_workers: 48
+      games_per_epoch: 2048
+    training:
+      batch_size: 1024
+      learning_rate: 1.0e-4
+    dataloader:
+      num_workers: 16
+      ram_cache:
+        enabled: true
+        threshold_gb: 64.0
+
+  # Local development (NVIDIA RTX, 8GB+ VRAM)
+  local:
+    device:
+      type: "cuda"
+      amp:
+        enabled: true
+        dtype: "float16"
+    selfplay:
+      cpu_workers: 8
+      games_per_epoch: 100
+    training:
+      batch_size: 512
+      learning_rate: 4.0e-4
+    dataloader:
+      num_workers: 4
+      ram_cache:
+        enabled: false
+
+  # CPU-only training
+  cpu:
+    device:
+      type: "cpu"
+      amp:
+        enabled: false
+    selfplay:
+      cpu_workers: 4
+      games_per_epoch: 50
+    training:
+      batch_size: 64
+      learning_rate: 1.0e-4
+    dataloader:
+      num_workers: 2
+      ram_cache:
+        enabled: true
+        threshold_gb: 8.0

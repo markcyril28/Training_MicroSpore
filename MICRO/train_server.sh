@@ -14,77 +14,35 @@ set -euo pipefail
 #   CPU Threads: 128
 #===============================================================================
 
-: << 'SERVER_SPECS'
-=================================== Product Info ======================================
-GPU[0]          : Card Model:           0x740f
-GPU[0]          : Card Vendor:          Advanced Micro Devices, Inc. [AMD/ATI]
-GPU[0]          : Card SKU:             D67301V
-GPU[0]          : GFX Version:          gfx90a
-================================== Memory Info ========================================
-GPU[0]          : VRAM Total Memory (B): 68702699520 (~64GB)
-GPU[0]          : Temperature (Sensor junction) (C): 35.0
-GPU[0]          : Average Graphics Package Power (W): 42.0
-==========================================================================================
-SERVER_SPECS
-
 # =============================================================================
 # TRAINING PARAMETERS - Optimized for MI210 64GB + 128 CPU threads + 1TB RAM
 # =============================================================================
+# All training parameters are now defined in the YAML config file.
+# Edit the config file to change training settings.
+# =============================================================================
+
+# Config file to use (comment/uncomment to switch)
+CONFIG_FILE="config/training_config_server.yaml"
+# CONFIG_FILE="config/training_config_local.yaml"
+# CONFIG_FILE="config/training_config.yaml"
+
+# Optional: Profile to apply from the config file
+# CONFIG_PROFILE="server"
+# CONFIG_PROFILE="local"
+# CONFIG_PROFILE="cpu"
+CONFIG_PROFILE="server"
 
 # -----------------------------------------------------------------------------
-# Device Settings
-# -----------------------------------------------------------------------------
-DEVICE="cuda"                    # Device to train on: "cuda" (ROCm/HIP) or "cpu"
-NO_AMP=true                      # DISABLED: Testing if AMP causes gradient issues on ROCm
-AMP_DTYPE="bfloat16"             # OPTIONS: "bfloat16" (recommended for MI210), "float16" (may cause issues)
-COMPILE_MODEL=true              # DISABLED: torch.compile may break gradients on ROCm
-COMPILE_MODE="reduce-overhead"          # OPTIONS: "default" (fast compile), "reduce-overhead" (slow compile, fast run)
-
-# -----------------------------------------------------------------------------
-# Self-play Settings (Optimized for 128 CPU threads)
-# -----------------------------------------------------------------------------
-CPU_WORKERS=48                   # ~40% of 128 threads for self-play (rest for dataloader/system)
-SELFPLAY_GAMES=2048              # Balanced: enough data without long epoch times
-FOCUS_SIDE="both"                # Focus side: "white", "black", or "both"
-OPPONENT_FOCUS="both"            # Opponent focus: "ml", "algorithm", or "both"
-SELFPLAY_DIFFICULTIES="easy,medium,hard"  # Comma-separated difficulties to cycle through
-NOISE_PROB=0.20                  # Slightly more exploration for diversity
-MAX_MOVES_PER_GAME=100           # Max moves per game
-
-# -----------------------------------------------------------------------------
-# Training Settings (Optimized for 64GB HBM2e VRAM - FP32 mode)
-# -----------------------------------------------------------------------------
-BATCH_SIZE=1024                  # FP32 uses 2x memory vs FP16, keep moderate
-LEARNING_RATE=1e-4               # Lower LR for FP32 stability (was 3e-4)
-WEIGHT_DECAY=1e-5                # Weight decay for regularization
-GRAD_CLIP_NORM=1.0               # Gradient clipping for stability
-TRAIN_STEPS=100000000000         # Total training steps
-CHECKPOINT_EVERY=2000            # Checkpoint every 2000 steps
-
-# -----------------------------------------------------------------------------
-# DataLoader Settings (Optimized for 128 CPU threads + 1TB RAM)
-# -----------------------------------------------------------------------------
-DATALOADER_WORKERS=16            # I/O bound - more than 16 rarely helps
-PIN_MEMORY=true                  # Pin memory for faster GPU transfer
-
-# -----------------------------------------------------------------------------
-# Model Testing Settings (ML vs Algorithm)
-# -----------------------------------------------------------------------------
-TEST_VS_ALGO=false                # Enable periodic testing against algorithm
-TEST_EVERY=5000                  # Test every 5000 steps (testing is expensive)
-TEST_GAMES=50                    # Test games for reliable metrics
-TEST_DIFFICULTY="medium"         # Algorithm difficulty for testing
-
-# -----------------------------------------------------------------------------
-# Resume Settings
+# Resume Settings (can override config file)
 # -----------------------------------------------------------------------------
 RESUME=""                        # Path to checkpoint to resume from
 RESUME_LATEST=true               # Resume from latest checkpoint in models/checkpoints/
 
 # -----------------------------------------------------------------------------
-# Time-based Stopping
+# Time-based Stopping (can override config file)
 # -----------------------------------------------------------------------------
-TRAIN_DURATION="2h"              # Train for this duration
+TRAIN_DURATION=""                # Override config duration (e.g., "2h", "1d", "30m")
+                                 # Leave empty to use duration from config file
 
 # =============================================================================
 # END OF PARAMETERS - Do not edit below this line
@@ -208,124 +166,48 @@ fi
 # Build command arguments
 ARGS=""
 
-# Device settings
-ARGS+=" --device ${DEVICE}"
-if [ "$NO_AMP" = true ]; then
-    ARGS+=" --no-amp"
-else
-    ARGS+=" --amp-dtype ${AMP_DTYPE}"
-fi
-if [ "$COMPILE_MODEL" = true ]; then
-    ARGS+=" --compile-model"
-    ARGS+=" --compile-mode ${COMPILE_MODE}"
+# Config file (required)
+ARGS+=" --config ${CONFIG_FILE}"
+
+# Profile (optional)
+if [ -n "$CONFIG_PROFILE" ]; then
+    ARGS+=" --profile ${CONFIG_PROFILE}"
 fi
 
-# Self-play settings
-ARGS+=" --cpu-workers ${CPU_WORKERS}"
-ARGS+=" --selfplay-games ${SELFPLAY_GAMES}"
-ARGS+=" --focus-side ${FOCUS_SIDE}"
-ARGS+=" --opponent-focus ${OPPONENT_FOCUS}"
-ARGS+=" --selfplay-difficulties ${SELFPLAY_DIFFICULTIES}"
-ARGS+=" --noise-prob ${NOISE_PROB}"
-ARGS+=" --max-moves ${MAX_MOVES_PER_GAME}"
-
-# Training settings
-ARGS+=" --batch-size ${BATCH_SIZE}"
-ARGS+=" --learning-rate ${LEARNING_RATE}"
-ARGS+=" --weight-decay ${WEIGHT_DECAY}"
-if [ -n "$GRAD_CLIP_NORM" ]; then
-    ARGS+=" --grad-clip-norm ${GRAD_CLIP_NORM}"
-fi
-if [ -n "$TRAIN_STEPS" ] && [ "$TRAIN_STEPS" -gt 0 ] 2>/dev/null; then
-    ARGS+=" --train-steps ${TRAIN_STEPS}"
-fi
-ARGS+=" --checkpoint-every ${CHECKPOINT_EVERY}"
-
-# DataLoader settings
-ARGS+=" --dataloader-workers ${DATALOADER_WORKERS}"
-if [ "$PIN_MEMORY" = true ]; then
-    ARGS+=" --pin-memory"
-fi
-
-# Model testing settings
-if [ "$TEST_VS_ALGO" = true ]; then
-    ARGS+=" --test-vs-algo"
-    ARGS+=" --test-every ${TEST_EVERY}"
-    ARGS+=" --test-games ${TEST_GAMES}"
-    ARGS+=" --test-difficulty ${TEST_DIFFICULTY}"
-fi
-
-# Resume settings
+# Resume settings (override config if specified)
 if [ -n "$RESUME" ]; then
     ARGS+=" --resume ${RESUME}"
 elif [ "$RESUME_LATEST" = true ]; then
     ARGS+=" --resume-latest"
 fi
 
-# Time-based stopping
+# Time-based stopping (override config if specified)
 if [ -n "$TRAIN_DURATION" ]; then
     ARGS+=" --train-duration ${TRAIN_DURATION}"
 fi
 
-echo "Training parameters:"
+echo "Training Configuration:"
 echo ""
-echo "  [Device Settings]"
-echo "    Device:            ${DEVICE}"
-echo "    Mixed Precision:   $([ "$NO_AMP" = true ] && echo "disabled" || echo "enabled (${AMP_DTYPE})")"
-echo "    Model Compile:     $([ "$COMPILE_MODEL" = true ] && echo "enabled" || echo "disabled")"
-echo ""
-echo "  [Self-play Settings]"
-echo "    CPU Workers:       ${CPU_WORKERS}"
-echo "    Self-play Games:   ${SELFPLAY_GAMES}"
-echo "    Focus Side:        ${FOCUS_SIDE}"
-echo "    Opponent Focus:    ${OPPONENT_FOCUS}"
-echo "    Difficulties:      ${SELFPLAY_DIFFICULTIES} (cycling)"
-echo "    Noise Probability: ${NOISE_PROB}"
-echo "    Max Moves/Game:    ${MAX_MOVES_PER_GAME}"
-echo ""
-echo "  [Training Settings]"
-echo "    Batch Size:        ${BATCH_SIZE}"
-echo "    Learning Rate:     ${LEARNING_RATE}"
-echo "    Weight Decay:      ${WEIGHT_DECAY}"
-if [ -n "$GRAD_CLIP_NORM" ]; then
-    echo "    Gradient Clip:     ${GRAD_CLIP_NORM}"
-else
-    echo "    Gradient Clip:     (disabled)"
-fi
-if [ -n "$TRAIN_STEPS" ] && [ "$TRAIN_STEPS" -gt 0 ] 2>/dev/null; then
-    echo "    Train Steps:       ${TRAIN_STEPS}"
-else
-    echo "    Train Steps:       (indefinite)"
-fi
-echo "    Checkpoint:        every ${CHECKPOINT_EVERY} steps"
-echo ""
-echo "  [DataLoader Settings]"
-echo "    Workers:           ${DATALOADER_WORKERS}"
-echo "    Pin Memory:        $([ "$PIN_MEMORY" = true ] && echo "enabled" || echo "disabled")"
-echo ""
-echo "  [Model Testing]"
-if [ "$TEST_VS_ALGO" = true ]; then
-    echo "    Test vs Algorithm: enabled"
-    echo "    Test Frequency:    every ${TEST_EVERY} steps"
-    echo "    Test Games:        ${TEST_GAMES}"
-    echo "    Test Difficulty:   ${TEST_DIFFICULTY}"
-else
-    echo "    Test vs Algorithm: disabled"
+echo "  Config File:     ${CONFIG_FILE}"
+if [ -n "$CONFIG_PROFILE" ]; then
+    echo "  Profile:         ${CONFIG_PROFILE}"
 fi
 echo ""
-echo "  [Session]"
+echo "  [Session Overrides]"
 if [ -n "$TRAIN_DURATION" ]; then
     echo "    Train Duration:    ${TRAIN_DURATION}"
 else
-    echo "    Train Duration:    (no limit)"
+    echo "    Train Duration:    (from config file)"
 fi
 if [ -n "$RESUME" ]; then
     echo "    Resume from:       ${RESUME}"
 elif [ "$RESUME_LATEST" = true ]; then
     echo "    Resume from:       latest checkpoint"
 else
-    echo "    Resume from:       (starting fresh)"
+    echo "    Resume from:       (from config file)"
 fi
+echo ""
+echo "  See ${CONFIG_FILE} for all training parameters."
 echo ""
 
 exec python -m micro.ai.ml.trainer ${ARGS}
