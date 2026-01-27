@@ -33,6 +33,13 @@ try:
 except ImportError:
     LOGGING_AVAILABLE = False
 
+# Import optimization metrics logger (optional)
+try:
+    from ..logging import OptimizationMetricsLogger, extract_yolo_class_metrics
+    OPTIMIZATION_LOGGING_AVAILABLE = True
+except ImportError:
+    OPTIMIZATION_LOGGING_AVAILABLE = False
+
 # Import class balancer for addressing class imbalance
 from .class_balancer import create_balanced_training_data, cleanup_balanced_dataset, generate_balancing_report
 
@@ -1306,6 +1313,138 @@ def load_or_download_model(model_name: str, weights_dir: Optional[Path] = None) 
     return model
 
 
+def create_optimization_callbacks(opt_logger, patience: int = 50) -> Dict[str, callable]:
+    """
+    Create YOLO callbacks for optimization metrics logging.
+    
+    Args:
+        opt_logger: OptimizationMetricsLogger instance
+        patience: Early stopping patience value
+        
+    Returns:
+        Dict of callback functions
+    """
+    import time
+    epoch_start_time = [0.0]  # Mutable container for closure
+    
+    def on_train_epoch_start(trainer):
+        """Track epoch start time for throughput calculation."""
+        epoch_start_time[0] = time.time()
+    
+    def on_train_epoch_end(trainer):
+        """Log optimization metrics at end of each epoch."""
+        try:
+            epoch = trainer.epoch
+            metrics = trainer.metrics
+            
+            # Get train loss components
+            train_losses = {}
+            if hasattr(trainer, 'loss_items') and trainer.loss_items is not None:
+                try:
+                    loss_items = trainer.loss_items
+                    # YOLO typically has box, cls, dfl losses
+                    if hasattr(loss_items, '__len__') and len(loss_items) >= 3:
+                        train_losses['box'] = float(loss_items[0])
+                        train_losses['cls'] = float(loss_items[1])
+                        train_losses['dfl'] = float(loss_items[2])
+                except Exception:
+                    pass
+            
+            # Fallback to metrics if available
+            if not train_losses:
+                train_losses = {
+                    'box': metrics.get('train/box_loss', 0.0),
+                    'cls': metrics.get('train/cls_loss', 0.0),
+                    'dfl': metrics.get('train/dfl_loss', 0.0),
+                }
+            
+            val_losses = {
+                'box': metrics.get('val/box_loss', 0.0),
+                'cls': metrics.get('val/cls_loss', 0.0),
+                'dfl': metrics.get('val/dfl_loss', 0.0),
+            }
+            
+            # Log loss breakdown
+            opt_logger.log_loss_breakdown(epoch, train_losses, val_losses)
+            
+            # Log convergence indicators
+            current_map5095 = metrics.get('metrics/mAP50-95(B)', 0.0)
+            val_total = val_losses['box'] + val_losses['cls'] + val_losses['dfl']
+            opt_logger.log_convergence_indicators(epoch, current_map5095, val_total, patience)
+            
+            # Log throughput metrics
+            epoch_time = time.time() - epoch_start_time[0]
+            num_images = len(trainer.train_loader.dataset) if hasattr(trainer, 'train_loader') else 0
+            batch_size = trainer.batch_size if hasattr(trainer, 'batch_size') else 16
+            opt_logger.log_throughput_metrics(epoch, epoch_time, num_images, batch_size)
+            
+            # Log learning rate analysis
+            lr_pg0 = metrics.get('lr/pg0', 0.0)
+            lr_pg1 = metrics.get('lr/pg1', 0.0)
+            lr_pg2 = metrics.get('lr/pg2', 0.0)
+            train_total = train_losses.get('box', 0) + train_losses.get('cls', 0) + train_losses.get('dfl', 0)
+            opt_logger.log_lr_analysis(epoch, lr_pg0, lr_pg1, lr_pg2, train_total)
+            
+            # Log gradient statistics if model is accessible
+            if hasattr(trainer, 'model') and trainer.model is not None:
+                try:
+                    opt_logger.log_gradient_stats(epoch, trainer.model)
+                except Exception:
+                    pass
+            
+        except Exception as e:
+            print(f"[OptimizationLogger] Warning: Could not log epoch metrics: {e}")
+    
+    def on_fit_epoch_end(trainer):
+        """Log per-class metrics after validation."""
+        try:
+            epoch = trainer.epoch
+            
+            # Extract per-class metrics from validator
+            if hasattr(trainer, 'validator') and trainer.validator is not None:
+                validator = trainer.validator
+                if hasattr(validator, 'metrics') and validator.metrics is not None:
+                    class_metrics = extract_yolo_class_metrics(validator.metrics)
+                    if class_metrics:
+                        opt_logger.log_per_class_metrics(epoch, class_metrics)
+        except Exception as e:
+            print(f"[OptimizationLogger] Warning: Could not log class metrics: {e}")
+    
+    def on_train_end(trainer):
+        """Generate optimization summary at end of training."""
+        try:
+            # Save optimization summary
+            summary_path = opt_logger.save_optimization_summary()
+            print(f"[OptimizationLogger] Optimization summary saved to: {summary_path}")
+            
+            # Generate and print recommendations
+            config = {}
+            if hasattr(trainer, 'args'):
+                args = trainer.args
+                config = {
+                    'lr0': getattr(args, 'lr0', 0.01),
+                    'hsv_h': getattr(args, 'hsv_h', 0.015),
+                    'mosaic': getattr(args, 'mosaic', 1.0),
+                    'mixup': getattr(args, 'mixup', 0.0),
+                }
+            
+            recommendations = opt_logger.generate_optimization_recommendations(config)
+            if recommendations:
+                print("\n[OptimizationLogger] Hyperparameter Recommendations:")
+                for rec in recommendations:
+                    print(f"  • {rec.parameter}: {rec.current_value} → {rec.recommended_value}")
+                    print(f"    Reason: {rec.reason} (confidence: {rec.confidence:.0%})")
+        except Exception as e:
+            print(f"[OptimizationLogger] Warning: Could not generate summary: {e}")
+    
+    return {
+        'on_train_epoch_start': on_train_epoch_start,
+        'on_train_epoch_end': on_train_epoch_end,
+        'on_fit_epoch_end': on_fit_epoch_end,
+        'on_train_end': on_train_end,
+    }
+
+
 def run_training(
     data_yaml: str,
     model_name: str,
@@ -1407,6 +1546,30 @@ def run_training(
         logger._init_metrics_csv()
         print(f"[TrainingLogger] Logging to: {log_dir}")
     
+    # Initialize optimization metrics logger for detailed hyperparameter tuning data
+    opt_logger = None
+    if OPTIMIZATION_LOGGING_AVAILABLE and log_dir:
+        # Read class names from data.yaml
+        class_names = []
+        try:
+            import yaml
+            with open(data_yaml, 'r') as f:
+                data_config = yaml.safe_load(f)
+                class_names = data_config.get('names', [])
+                if isinstance(class_names, dict):
+                    class_names = list(class_names.values())
+        except Exception:
+            pass
+        
+        # The optimization logger saves to the experiment output directory
+        experiment_output_dir = Path(project_dir) / exp_name
+        experiment_output_dir.mkdir(parents=True, exist_ok=True)
+        opt_logger = OptimizationMetricsLogger(
+            experiment_dir=experiment_output_dir,
+            class_names=class_names,
+        )
+        print(f"[OptimizationLogger] Tracking detailed optimization metrics")
+    
     # Load or download model
     model = load_or_download_model(model_name, Path(weights_dir))
     
@@ -1414,6 +1577,12 @@ def run_training(
     if logger:
         callbacks = logger.get_callbacks()
         for event, callback in callbacks.items():
+            model.add_callback(event, callback)
+    
+    # Add optimization logging callbacks if available
+    if opt_logger:
+        opt_callbacks = create_optimization_callbacks(opt_logger, patience)
+        for event, callback in opt_callbacks.items():
             model.add_callback(event, callback)
     
     # If grayscale mode, adjust HSV saturation to 0 to train on desaturated images
