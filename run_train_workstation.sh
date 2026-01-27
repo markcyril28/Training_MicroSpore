@@ -583,28 +583,74 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
         copy_outputs_to_dataset "${EXPERIMENT_LOG_DIR:-}" "${OUTPUT_DIR}" "${EXP_NAME}" "${DATASET_PATH}"
     else
         TRAINING_EXIT_CODE=$?
-        FAILED_RUNS+=("${RUN_ID}")
-        print_error "Run ${RUN_ID} training failed!"
         
-        if [ "$LOGGING_ENABLED" = true ]; then
-            # Log comprehensive error details
-            log_error "Training failed for ${RUN_ID}"
-            log_error "Exit code: ${TRAINING_EXIT_CODE}"
-            log_error "Command: python -m modules.training.train"
-            log_error "Parameters:"
-            log_error "  --data-yaml: ${DATA_YAML}"
-            log_error "  --model: ${YOLO_MODEL}"
-            log_error "  --epochs: ${EPOCHS}"
-            log_error "  --batch-size: ${BATCH_SIZE}"
-            log_error "  --img-size: ${IMG_SIZE}"
-            log_error "  --device: ${DEVICE}"
+        # Handle different exit codes
+        if [ "${TRAINING_EXIT_CODE}" -eq 130 ]; then
+            # Exit code 130 = SIGINT (128 + 2), typically Ctrl+C
+            print_warning "Run ${RUN_ID} interrupted by user (Ctrl+C or SIGINT)"
+            print_info "Training was manually stopped - this is not a crash"
+            FAILED_RUNS+=("${RUN_ID} (interrupted)")
             
-            # Capture and log the Python error output
-            if [ -f "${TRAINING_OUTPUT_FILE}" ] && [ -s "${TRAINING_OUTPUT_FILE}" ]; then
-                log_error "=== Python Error Output ==="
-                # Log the last 100 lines which typically contain the error
-                tail -n 100 "${TRAINING_OUTPUT_FILE}" >> "${CURRENT_ERROR_LOG}"
-                log_error "=== End of Error Output ==="
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_warning "Training interrupted by user for ${RUN_ID}"
+                log_info "Exit code: 130 (SIGINT - user interrupt)"
+            fi
+            
+            # Ask if user wants to continue with remaining runs
+            if [ ${CURRENT_RUN} -lt ${TOTAL_COMBINATIONS} ]; then
+                print_info "Remaining runs: $((TOTAL_COMBINATIONS - CURRENT_RUN))"
+                print_info "Stopping all remaining runs (user interrupt detected)"
+                # Break out of all loops
+                break 9
+            fi
+        elif [ "${TRAINING_EXIT_CODE}" -eq 137 ]; then
+            # Exit code 137 = SIGKILL (128 + 9), often OOM killer
+            print_error "Run ${RUN_ID} was killed (possibly by OOM killer)"
+            print_warning "The system may have run out of memory and killed the process"
+            print_warning "Suggestions:"
+            print_warning "  - Reduce batch_size (current: ${BATCH_SIZE})"
+            print_warning "  - Reduce img_size (current: ${IMG_SIZE})"
+            print_warning "  - Use a smaller model (current: ${YOLO_MODEL})"
+            FAILED_RUNS+=("${RUN_ID}")
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_error "Training killed for ${RUN_ID} (possibly OOM killer)"
+                log_error "Exit code: 137 (SIGKILL)"
+            fi
+        elif [ "${TRAINING_EXIT_CODE}" -eq 143 ]; then
+            # Exit code 143 = SIGTERM (128 + 15), graceful termination
+            print_warning "Run ${RUN_ID} was terminated gracefully (SIGTERM)"
+            FAILED_RUNS+=("${RUN_ID} (terminated)")
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_warning "Training terminated for ${RUN_ID}"
+                log_info "Exit code: 143 (SIGTERM)"
+            fi
+        else
+            # Other error codes - actual failures
+            FAILED_RUNS+=("${RUN_ID}")
+            print_error "Run ${RUN_ID} training failed!"
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                # Log comprehensive error details
+                log_error "Training failed for ${RUN_ID}"
+                log_error "Exit code: ${TRAINING_EXIT_CODE}"
+                log_error "Command: python -m modules.training.train"
+                log_error "Parameters:"
+                log_error "  --data-yaml: ${DATA_YAML}"
+                log_error "  --model: ${YOLO_MODEL}"
+                log_error "  --epochs: ${EPOCHS}"
+                log_error "  --batch-size: ${BATCH_SIZE}"
+                log_error "  --img-size: ${IMG_SIZE}"
+                log_error "  --device: ${DEVICE}"
+                
+                # Capture and log the Python error output
+                if [ -f "${TRAINING_OUTPUT_FILE}" ] && [ -s "${TRAINING_OUTPUT_FILE}" ]; then
+                    log_error "=== Python Error Output ==="
+                    # Log the last 100 lines which typically contain the error
+                    tail -n 100 "${TRAINING_OUTPUT_FILE}" >> "${CURRENT_ERROR_LOG}"
+                    log_error "=== End of Error Output ==="
+                fi
             fi
         fi
     fi

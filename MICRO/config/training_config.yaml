@@ -96,7 +96,7 @@ resume:
 # -----------------------------------------------------------------------------
 time_limit:
   enabled: true
-  duration: "2h"                      # Training duration (e.g., "2h", "1d12h", "30m")
+  duration: 7h"                      # Training duration (e.g., "2h", "1d12h", "30m")
 
 # =============================================================================
 # Hardware-Specific Profiles
