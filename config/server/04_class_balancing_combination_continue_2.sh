@@ -81,16 +81,16 @@ YOLO_MODEL="${YOLO_MODELS[0]}"
 #   - Keep same IMG_SIZE as original training (1280)
 
 CONTINUE_FROM_CUSTOM=true       # Set to true to continue from custom weights
-AUTO_DETECT_LATEST=true         # Set to true to auto-detect latest trained model
-PREFER_LAST_PT=true             # true = use last.pt (resume exact state), false = use best.pt
+AUTO_DETECT_LATEST=false        # Disabled - using specific best.pt from cont1
+PREFER_LAST_PT=false            # false = use best.pt (best mAP checkpoint for fine-tuning)
 
 # Full path to your trained model weights (ONLY used when AUTO_DETECT_LATEST=false)
-# Use last.pt to continue from exact state, or best.pt to fine-tune from best checkpoint
-CUSTOM_WEIGHTS_PATH="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/trained_models_output/server/04_class_balancing_combination/Dataset_2_OPTIMIZATION_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400/weights/Dataset_2_OPTIMIZATION_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400_last.pt"
+# Using best.pt from cont1 which achieved best mAP50=71.5% at epoch 407
+CUSTOM_WEIGHTS_PATH="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/trained_models_output/server/04_class_balancing_combination_continue/Dataset_2_OPTIMIZATION_yolov8x_gray_img1280_bal-manual_auto_e500_b4_lr0_00005_20260128_180024_cont1/weights/best.pt"
 
 # Directory to search for latest model (used when AUTO_DETECT_LATEST=true)
 # This should point to the output directory where trained models are saved
-AUTO_DETECT_SEARCH_DIR="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/trained_models_output/server/04_class_balancing_combination"
+AUTO_DETECT_SEARCH_DIR="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/trained_models_output/server/04_class_balancing_combination_continue"
 
 # Optional filters for auto-detection (leave empty to find any latest model)
 AUTO_DETECT_DATASET_FILTER=""      # e.g., "Dataset_2" to only find Dataset_2 models
@@ -98,9 +98,10 @@ AUTO_DETECT_MODEL_FILTER=""        # e.g., "yolov8x" to only find yolov8x models
 
 # Additional epochs to train (added to model's current epoch count)
 # When continuing, these epochs are ADDED to the previous training
+# Model plateaued at epoch 407 - using shorter focused training
 ADDITIONAL_EPOCHS_LIST=(
-    500                     # +500 epochs (total ~1000 from original)
-    # 200                   # +200 epochs for moderate fine-tuning
+    # 500                   # +500 epochs (too long, model already plateaued)
+    300                     # +300 epochs focused fine-tuning on confused classes
     # 100                   # +100 epochs for quick fine-tuning
     # 1000                  # +1000 epochs for grokking experiments
 )
@@ -153,19 +154,20 @@ EPOCHS_LIST=(
 )
 
 PATIENCE_LIST=(
-    #100                     # reduced patience for fine-tuning (quicker early stop)
+    100                     # reduced patience for fine-tuning (quicker early stop)
     # 50                    # aggressive early stopping
     # 200                   # moderate patience
     # 300                   # original patience (may be too long for fine-tuning)
-    500
+    # 500                   # too long - model plateaued at 498 epochs without improvement
 )
 
 BATCH_SIZE_LIST=(
-    4                     # low (for debugging)
-    #16                    # moderate
-    #32                    # standard for high-end GPUs
-    #64                      # optimal for MI210 64GB HBM2e (maximum throughput)
-    # 128                   # very high batch size (may need gradient accumulation)
+    # 4                    # too low - noisy gradients hurt confused class learning
+    8                       # moderate - better gradient stability for confused classes
+    # 16                   # moderate
+    # 32                   # standard for high-end GPUs
+    # 64                   # optimal for MI210 64GB HBM2e (maximum throughput)
+    # 128                  # very high batch size (may need gradient accumulation)
 )
 
 IMG_SIZE_LIST=(
@@ -196,9 +198,9 @@ WORKERS_LIST=(
 LR0_LIST=(
     # For continued training, use LOWER learning rates (10-100x lower):
     # 0.001                 # original training LR (too high for fine-tuning)
-    #0.0001                  # recommended for fine-tuning (10x lower)
-    0.00005               # very fine-tuning (20x lower)
-    # 0.00001               # ultra fine-tuning (100x lower) - for grokking
+    # 0.0001                # too high - previous run plateaued with 0.00005
+    # 0.00005              # previous run used this - model plateaued
+    0.00001                 # ultra fine-tuning (100x lower) - break plateau
 )
 
 LRF_LIST=(
@@ -214,10 +216,10 @@ MOMENTUM_LIST=(
 )
 
 WEIGHT_DECAY_LIST=(
-    # 0.0005                # standard weight decay
+    0.0005                  # standard weight decay - reduce overfitting on majority classes
     # 0.0001                # low regularization
     # 0.001                 # high regularization
-    0.01                    # 20x higher regularization (for extended training / grokking experiments)
+    # 0.01                  # too high - was causing plateau (20x regularization)
 )
 
 OPTIMIZER_LIST=(
@@ -271,11 +273,16 @@ CLASS_FOCUS_MODE_LIST=(
 )
 
 # Classes to focus on in "manual" mode (comma-separated, no spaces)
-# These are typically the underrepresented classes you want to boost
+# ANALYSIS: Classes with mAP50-95 < 0.50 (high confusion):
+#   - young_pollen: 0.36-0.43 (WORST - low precision & recall)
+#   - mature_pollen: 0.38-0.45 (low precision & recall)
+#   - others: 0.39-0.41 (low recall)
+#   - late_microspore: 0.44-0.49 (low precision)
+#   - mid_microspore: 0.48-0.49 (borderline)
 CLASS_FOCUS_CLASSES_LIST=(
-    "mid_microspore,late_microspore,young_pollen,mature_pollen"    # Focus on confusing classes
+    "young_pollen,mature_pollen,others,late_microspore,mid_microspore"  # All confused classes
+    # "young_pollen,mature_pollen"          # Focus on worst 2 only
     # "tetrad"                              # Focus only on tetrad
-    # "tetrad,mature_pollen"                # Focus on two smallest
     # "all"                                 # Apply to all classes (for auto/sqrt modes)
 )
 
@@ -283,9 +290,10 @@ CLASS_FOCUS_CLASSES_LIST=(
 # In "manual": Multiplies the specified classes by this factor
 # In "auto"/"sqrt": Maximum fold cap to prevent extreme oversampling
 CLASS_FOCUS_FOLD_LIST=(
-    #2.0                     # 2x oversampling (moderate boost)
+    # 2.0                   # 2x oversampling (moderate boost)
     # 1.5                   # 1.5x oversampling (gentle boost)
-    3.0                   # 3x oversampling (aggressive boost)
+    # 3.0                   # previous run used 3x - still confused
+    4.0                     # 4x oversampling (stronger boost for confused classes)
     # 5.0                   # 5x oversampling (very aggressive - use with caution)
 )
 
@@ -376,9 +384,9 @@ MOSAIC_LIST=(
 )
 
 MIXUP_LIST=(
-    #0.0                     # no mixup
-    0.1                   # light mixup
-    #0.5
+    # 0.0                   # no mixup
+    0.2                     # moderate mixup - helps with class boundary confusion
+    # 0.5                   # heavy mixup
 )
 
 COPY_PASTE_LIST=(
@@ -422,8 +430,9 @@ BOX_LOSS_LIST=(
 )
 
 CLS_LOSS_LIST=(
-    0.5                     # standard classification loss weight
-    # 1.0                   # from cfg cls_normalizer
+    # 0.5                   # standard classification loss weight
+    1.0                     # higher cls weight - prioritize classification over localization
+    # 1.5                   # very high cls weight
 )
 
 DFL_LOSS_LIST=(
@@ -444,9 +453,11 @@ IOU_THRESHOLD_LIST=(
 
 # Label Smoothing (regularization technique)
 # ─────────────────────────────────────────────────────────────────────────────
+# Helps with confused classes by softening hard labels
 LABEL_SMOOTHING_LIST=(
-    #0.0                     # no label smoothing
-    0.1                   # light label smoothing
+    # 0.0                   # no label smoothing
+    0.15                    # moderate label smoothing - reduces overconfidence on wrong classes
+    # 0.1                   # light label smoothing (previous run)
 )
 
 # Close Mosaic (disable mosaic augmentation near end of training)
@@ -455,7 +466,8 @@ LABEL_SMOOTHING_LIST=(
 CLOSE_MOSAIC_LIST=(
     # 10                    # disable mosaic for last 10 epochs
     # 0                     # never disable mosaic
-    20                      # disable mosaic for last 20 epochs (better fine-tuning)
+    # 20                    # disable mosaic for last 20 epochs
+    50                      # disable mosaic for last 50 epochs - longer clean training
 )
 
 # Multi-scale Training
