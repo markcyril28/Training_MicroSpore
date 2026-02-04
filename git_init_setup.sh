@@ -1,7 +1,7 @@
 #!/bin/bash
 # Init Setup - Convert to Unix line endings & set executable permissions
 
-git stash && git pull
+#git stash && git pull
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
