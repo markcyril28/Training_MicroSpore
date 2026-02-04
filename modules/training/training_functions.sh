@@ -196,28 +196,169 @@ find_latest_trained_model() {
 # This handles the nested naming to extract just the core model (e.g., yolov8x)
 #
 # Usage: base_model=$(extract_base_model_from_exp_name "Dataset_2_yolov8x_gray_img1280_bal-manual_auto_e500_b8_lr0_001_20260121_045400_cont")
-# Returns: yolov8x (or the original model name without dataset prefix)
+# Returns: yolov8x (or empty string if not found - caller should handle fallback)
 extract_base_model_from_exp_name() {
     local exp_name="$1"
     
     # Pattern: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}_{timestamp}[_cont]
     # We need to extract the model part
     
-    # Remove _cont suffix if present
+    # Remove _cont suffix if present (including contN variants)
     local clean_name
-    clean_name=$(echo "${exp_name}" | sed 's/_cont$//')
+    clean_name=$(echo "${exp_name}" | sed 's/_cont[0-9]*$//')
     
     # Extract model using regex - model is after first dataset part and before _rgb/_gray
-    # Model names: yolov5nu, yolov8x, yolo11x, etc.
+    # Model names: yolov5nu, yolov5xu, yolov8x, yolov9e, yolo11x, etc.
+    # Pattern covers: yolov5nu, yolov8n, yolov8x, yolov9t, yolov9e, yolo11n, yolo11x, etc.
     local model
-    model=$(echo "${clean_name}" | grep -oE '(yolov?[0-9]+[a-z]*|yolo[0-9]+[a-z]*)' | head -1)
+    model=$(echo "${clean_name}" | grep -oE 'yolov?[0-9]+[a-z]*u?' | head -1)
     
     if [ -n "${model}" ]; then
         echo "${model}"
     else
-        # Fallback: return the input without common prefixes
-        echo "${exp_name}"
+        # Return empty string - caller must handle fallback
+        echo ""
     fi
+}
+
+# Extract model architecture from a .pt weights file using Python
+# This reads the actual model structure from the checkpoint
+#
+# Usage: model_arch=$(extract_model_from_pt_file "/path/to/best.pt")
+# Returns: Model architecture name (e.g., yolov8x) or empty string on failure
+extract_model_from_pt_file() {
+    local pt_file="$1"
+    
+    if [ ! -f "${pt_file}" ]; then
+        echo ""
+        return 1
+    fi
+    
+    # Use Python to extract model info from the .pt file
+    local model_arch
+    model_arch=$(python3 -c "
+import sys
+import re
+try:
+    import torch
+    ckpt = torch.load('${pt_file}', map_location='cpu', weights_only=False)
+    
+    model_name = None
+    
+    # Helper function to extract architecture from a model name or path
+    def extract_arch(name):
+        if not name:
+            return None
+        # Extract just the architecture from full path or model name
+        import os
+        basename = os.path.basename(str(name)).replace('.pt', '').replace('.yaml', '')
+        # Remove _best/_last suffixes
+        basename = re.sub(r'_(best|last)\$', '', basename)
+        # Try to find yolo pattern
+        match = re.search(r'yolov?[0-9]+[a-z]*u?', basename)
+        return match.group(0) if match else None
+    
+    # Helper function to identify model variant from yaml multipliers
+    def identify_from_yaml(yaml_dict):
+        if not yaml_dict or not isinstance(yaml_dict, dict):
+            return None
+        
+        depth = yaml_dict.get('depth_multiple', 0)
+        width = yaml_dict.get('width_multiple', 0)
+        
+        # YOLOv8 variants based on depth_multiple and width_multiple
+        # n: 0.33, 0.25 | s: 0.33, 0.50 | m: 0.67, 0.75 | l: 1.0, 1.0 | x: 1.0, 1.25
+        if abs(depth - 1.0) < 0.01 and abs(width - 1.25) < 0.01:
+            return 'yolov8x'
+        elif abs(depth - 1.0) < 0.01 and abs(width - 1.0) < 0.01:
+            return 'yolov8l'
+        elif abs(depth - 0.67) < 0.01 and abs(width - 0.75) < 0.01:
+            return 'yolov8m'
+        elif abs(depth - 0.33) < 0.01 and abs(width - 0.50) < 0.01:
+            return 'yolov8s'
+        elif abs(depth - 0.33) < 0.01 and abs(width - 0.25) < 0.01:
+            return 'yolov8n'
+        return None
+    
+    # Method 1: Check train_args['model'] - but only if it's a simple model name
+    if 'train_args' in ckpt:
+        args = ckpt['train_args']
+        if isinstance(args, dict) and 'model' in args:
+            model_val = args['model']
+            # Only use if it's a simple model name, not a long path
+            if model_val and len(str(model_val)) < 30:
+                arch = extract_arch(model_val)
+                if arch:
+                    model_name = arch
+    
+    # Method 2: Check ema (preferred for continued training models)
+    if not model_name and 'ema' in ckpt and ckpt['ema'] is not None:
+        ema = ckpt['ema']
+        # Try yaml_file first
+        if hasattr(ema, 'yaml') and isinstance(ema.yaml, dict):
+            yaml_file = ema.yaml.get('yaml_file', '')
+            if yaml_file:
+                arch = extract_arch(yaml_file)
+                if arch:
+                    model_name = arch
+            # If no yaml_file, identify from multipliers
+            if not model_name:
+                model_name = identify_from_yaml(ema.yaml)
+        # Try args.model
+        if not model_name and hasattr(ema, 'args'):
+            args = ema.args
+            if hasattr(args, 'model'):
+                arch = extract_arch(args.model)
+                if arch:
+                    model_name = arch
+    
+    # Method 3: Check model key (non-continued training)
+    if not model_name and 'model' in ckpt and ckpt['model'] is not None:
+        model = ckpt['model']
+        if hasattr(model, 'yaml') and isinstance(model.yaml, dict):
+            yaml_file = model.yaml.get('yaml_file', '')
+            if yaml_file:
+                arch = extract_arch(yaml_file)
+                if arch:
+                    model_name = arch
+            if not model_name:
+                model_name = identify_from_yaml(model.yaml)
+    
+    print(model_name if model_name else '')
+except Exception as e:
+    print('', file=sys.stderr)
+    sys.exit(1)
+" 2>/dev/null)
+    
+    echo "${model_arch}"
+}
+
+# Truncate experiment name if it exceeds filesystem limits
+# Linux ext4 limit is 255 bytes for filenames
+#
+# Usage: safe_name=$(truncate_exp_name "very_long_experiment_name" 200)
+# Returns: Truncated name with hash suffix to maintain uniqueness
+truncate_exp_name() {
+    local exp_name="$1"
+    local max_length="${2:-200}"  # Default 200 to leave room for _best.pt etc.
+    
+    local name_length=${#exp_name}
+    
+    if [ "${name_length}" -le "${max_length}" ]; then
+        echo "${exp_name}"
+        return 0
+    fi
+    
+    # Name too long - truncate and add hash for uniqueness
+    # Keep first part, add short hash of full name
+    local hash
+    hash=$(echo -n "${exp_name}" | md5sum | cut -c1-8)
+    
+    # Calculate how much to keep (leaving room for _hash suffix)
+    local keep_length=$((max_length - 9))  # 9 = 1 underscore + 8 hash chars
+    local truncated="${exp_name:0:${keep_length}}_${hash}"
+    
+    echo "${truncated}"
 }
 
 # Extract parameters from an experiment name for continued training
@@ -367,8 +508,9 @@ check_training_exists() {
         while IFS= read -r dir; do
             # Check if this directory has a completed best.pt weight file
             if [ -d "${dir}/weights" ]; then
-                # Use find to check for *_best.pt files (more reliable than ls glob)
-                if find "${dir}/weights" -maxdepth 1 -name "*_best.pt" -type f 2>/dev/null | grep -q .; then
+                # Check for either *_best.pt (prefixed) or best.pt (standard YOLO output)
+                # Both patterns are valid depending on how training was run
+                if find "${dir}/weights" -maxdepth 1 \( -name "*_best.pt" -o -name "best.pt" \) -type f 2>/dev/null | grep -q .; then
                     echo "$dir"
                     return 0
                 fi

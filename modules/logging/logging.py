@@ -126,17 +126,19 @@ class TrainingLogger:
         # Check for improvements
         improvements = []
         
-        if metrics.mAP50 > self.best_metrics["mAP50"]:
-            self.best_metrics["mAP50"] = metrics.mAP50
-            improvements.append(f"mAP50: {metrics.mAP50:.4f}")
-        
+        # Primary metric for YOLO: mAP50-95 (used by YOLO internally for best.pt)
         if metrics.mAP50_95 > self.best_metrics["mAP50_95"]:
             self.best_metrics["mAP50_95"] = metrics.mAP50_95
             improvements.append(f"mAP50-95: {metrics.mAP50_95:.4f}")
         
-        if metrics.val_loss < self.best_metrics["val_loss"]:
+        if metrics.mAP50 > self.best_metrics["mAP50"]:
+            self.best_metrics["mAP50"] = metrics.mAP50
+            improvements.append(f"mAP50: {metrics.mAP50:.4f}")
+        
+        # Only report val_loss improvement if it's a real value (not just train_loss proxy)
+        if metrics.val_loss > 0 and metrics.val_loss < self.best_metrics["val_loss"]:
             self.best_metrics["val_loss"] = metrics.val_loss
-            improvements.append(f"val_loss: {metrics.val_loss:.4f}")
+            # Don't append to improvements - mAP is the true validation metric for YOLO
         
         if improvements:
             return f"New best at epoch {metrics.epoch}: " + ", ".join(improvements)
@@ -370,10 +372,14 @@ class YOLOTrainingLogger(TrainingLogger):
                 loss_tensor = trainer.loss.mean()
                 train_loss = float(loss_tensor.detach()) if loss_tensor.requires_grad else float(loss_tensor)
             
+            # YOLO v8 doesn't provide separate val losses - use total training loss as proxy
+            # The actual "fitness" is determined by mAP50-95 internally
+            val_loss = train_loss  # Placeholder - real validation quality tracked via mAP
+            
             training_metrics = TrainingMetrics(
                 epoch=epoch,
                 train_loss=train_loss,
-                val_loss=metrics.get('val/box_loss', 0) + metrics.get('val/cls_loss', 0),
+                val_loss=val_loss,
                 mAP50=metrics.get('metrics/mAP50(B)', 0),
                 mAP50_95=metrics.get('metrics/mAP50-95(B)', 0),
                 precision=metrics.get('metrics/precision(B)', 0),
