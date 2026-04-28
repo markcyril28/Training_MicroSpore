@@ -53,14 +53,6 @@ AUTO_DETECT_SEARCH_DIR="/mnt/local3.5tb/home/mcmercado/Training_MicroSpore/train
 AUTO_DETECT_DATASET_FILTER=""
 AUTO_DETECT_MODEL_FILTER=""
 
-#===============================================================================
-# EPOCHS - Short refinement phase
-#===============================================================================
-ADDITIONAL_EPOCHS_LIST=(
-    # Phase 3 goal: refine on hard examples with extended training
-    # Phase 2 peaked at epoch 125/200 then plateaued - give more room
-    200
-)
 
 #===============================================================================
 # DATASET - Use hard-example augmented dataset
@@ -82,12 +74,22 @@ DEFAULT_DATASET="${DATASET_LIST[0]}"
 #===============================================================================
 # TRAINING PARAMETERS - Very conservative for refinement
 #===============================================================================
+
+#===============================================================================
+# EPOCHS - Short refinement phase
+#===============================================================================
+ADDITIONAL_EPOCHS_LIST=(
+    # Phase 3 goal: refine on hard examples with extended training
+    # Phase 2 peaked at epoch 125/200 then plateaued - give more room
+    200
+)
+
 EPOCHS_LIST=(
     500                     # Ignored when continuing
 )
 
 PATIENCE_LIST=(
-    80                       # Tighter early stopping - Phase 2 plateaued after 75 epochs
+    125                       # Tighter early stopping - Phase 2 plateaued after 75 epochs
 )
 
 BATCH_SIZE_LIST=(
