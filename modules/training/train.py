@@ -568,7 +568,6 @@ def export_training_outputs(
     config: Dict[str, Any],
     classes_file: Path,
     img_size: int = 640,
-    data_yaml: Optional[str] = None,
 ) -> Dict[str, Optional[Path]]:
     """
     Export all additional training outputs (ONNX, obj.names, config).
@@ -580,7 +579,6 @@ def export_training_outputs(
         config: Training configuration dictionary
         classes_file: Path to classes.txt file
         img_size: Image size used during training
-        data_yaml: Path to data.yaml for validation (for confusion matrix stats)
         
     Returns:
         Dictionary of exported file paths
@@ -623,13 +621,6 @@ def export_training_outputs(
     
     # Copy general interpretation guide to root folder (with accuracy summary)
     results_csv = experiment_path / "results.csv"
-    
-    # Restore results.csv from stats/epoch_metrics.csv if it was already moved (for REGENERATE_ONLY mode)
-    stats_results_csv = folders['stats'] / 'epoch_metrics.csv'
-    if not results_csv.exists() and stats_results_csv.exists():
-        shutil.copy(str(stats_results_csv), str(results_csv))
-        print(f"[Export] Restored results.csv from stats/epoch_metrics.csv")
-    
     exports['general_guide'] = copy_general_guide(experiment_path, results_csv=results_csv)
     
     # Generate concise results file
@@ -646,36 +637,6 @@ def export_training_outputs(
     
     # Move YOLO-generated outputs to organized folders
     move_yolo_outputs_to_folders(experiment_path, folders, exp_name)
-    
-    # Generate confusion matrix statistics (CSV and PNG)
-    if data_yaml and best_weights.exists():
-        cm_exports = generate_confusion_matrix_stats(
-            weights_path=best_weights,
-            data_yaml=data_yaml,
-            stats_dir=folders['stats'],
-            matrices_dir=folders['viz_matrices'],
-            img_size=img_size,
-        )
-        exports.update(cm_exports)
-    else:
-        # Try to get data_yaml from args.yaml
-        args_yaml = experiment_path / "args.yaml"
-        if args_yaml.exists() and best_weights.exists():
-            try:
-                import yaml
-                with open(args_yaml, 'r') as f:
-                    args_config = yaml.safe_load(f) or {}
-                if 'data' in args_config:
-                    cm_exports = generate_confusion_matrix_stats(
-                        weights_path=best_weights,
-                        data_yaml=args_config['data'],
-                        stats_dir=folders['stats'],
-                        matrices_dir=folders['viz_matrices'],
-                        img_size=img_size,
-                    )
-                    exports.update(cm_exports)
-            except Exception as e:
-                print(f"[Export] Could not generate confusion matrix stats: {e}")
     
     # Clean up results.csv from root (moved to stats)
     if results_csv.exists():
@@ -939,188 +900,6 @@ def generate_hardware_stats_csv(experiment_path: Path, output_path: Path) -> Non
         writer.writerow(["1", "N/A", "N/A", "N/A", "N/A", "N/A"])
 
 
-def generate_confusion_matrix_stats(
-    weights_path: Path,
-    data_yaml: str,
-    stats_dir: Path,
-    matrices_dir: Path,
-    img_size: int = 640,
-) -> Dict[str, Optional[Path]]:
-    """
-    Generate confusion matrix statistics CSV files from validation results.
-    
-    Creates:
-        - confusion_matrix_raw.csv: Raw count matrix
-        - confusion_matrix_normalized.csv: Normalized by true class
-        - confusion_matrix_statistics.csv: Per-class TP, FP, FN, TN, precision, recall, F1, etc.
-    
-    Also generates/updates confusion matrix PNG files.
-    
-    Args:
-        weights_path: Path to the best.pt model weights
-        data_yaml: Path to data.yaml file
-        stats_dir: Directory to save CSV stats
-        matrices_dir: Directory for visualization matrices (also saves CSVs here)
-        img_size: Image size for validation
-        
-    Returns:
-        Dictionary of generated file paths
-    """
-    import numpy as np
-    import tempfile
-    
-    exports = {}
-    
-    if not weights_path.exists():
-        print(f"[ConfusionMatrix] Warning: Weights not found at {weights_path}")
-        return exports
-    
-    try:
-        print("[ConfusionMatrix] Running validation to generate confusion matrix statistics...")
-        
-        # Use a temporary directory to avoid polluting the experiment folder
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # Load model and run validation
-            model = YOLO(str(weights_path))
-            results = model.val(
-                data=data_yaml,
-                imgsz=img_size,
-                batch=8,
-                plots=True,  # Required for confusion matrix to be populated
-                save_json=False,
-                verbose=False,
-                project=tmpdir,
-                name='val_cm',
-                exist_ok=True
-            )
-            
-            # Get confusion matrix from results (populated after plots=True)
-            confusion_matrix = results.confusion_matrix
-            cm = confusion_matrix.matrix  # Raw matrix
-            class_names = results.names
-            nc = confusion_matrix.nc  # number of classes
-            
-            # Verify matrix is populated
-            if cm.sum() == 0:
-                print("[ConfusionMatrix] Warning: Confusion matrix is empty, skipping statistics")
-                return exports
-            
-            print(f"[ConfusionMatrix] Matrix: {cm.shape[0]}x{cm.shape[1]}, {int(cm.sum())} predictions")
-            
-            # 1. Raw confusion matrix CSV
-            raw_csv_path = stats_dir / 'confusion_matrix_raw.csv'
-            with open(raw_csv_path, 'w', newline='') as f:
-                writer = csv.writer(f)
-                header = ['Predicted \\ Actual'] + [class_names[i] for i in range(nc)] + ['background']
-                writer.writerow(header)
-                for i in range(cm.shape[0]):
-                    row_name = class_names[i] if i < nc else 'background'
-                    row = [row_name] + [int(cm[i, j]) for j in range(cm.shape[1])]
-                    writer.writerow(row)
-            exports['confusion_matrix_raw'] = raw_csv_path
-            print(f"[ConfusionMatrix] confusion_matrix_raw.csv saved")
-            
-            # 2. Normalized confusion matrix CSV (per true class / row-wise)
-            norm_csv_path = stats_dir / 'confusion_matrix_normalized.csv'
-            with open(norm_csv_path, 'w', newline='') as f:
-                writer = csv.writer(f)
-                header = ['Predicted \\ Actual'] + [class_names[i] for i in range(nc)] + ['background']
-                writer.writerow(header)
-                for i in range(cm.shape[0]):
-                    row_name = class_names[i] if i < nc else 'background'
-                    row_sum = cm[i].sum()
-                    if row_sum > 0:
-                        row = [row_name] + [f'{cm[i, j] / row_sum:.4f}' for j in range(cm.shape[1])]
-                    else:
-                        row = [row_name] + ['0.0000' for _ in range(cm.shape[1])]
-                    writer.writerow(row)
-            exports['confusion_matrix_normalized'] = norm_csv_path
-            print(f"[ConfusionMatrix] confusion_matrix_normalized.csv saved")
-            
-            # 3. Per-class confusion statistics CSV
-            stats_csv_path = stats_dir / 'confusion_matrix_statistics.csv'
-            with open(stats_csv_path, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(['class', 'true_positives', 'false_positives', 'false_negatives', 'true_negatives',
-                               'precision', 'recall', 'f1_score', 'specificity', 'accuracy', 'support'])
-                
-                total = cm[:nc, :nc].sum()
-                precisions, recalls, f1s = [], [], []
-                
-                for i in range(nc):
-                    tp = cm[i, i]
-                    fp = cm[:, i].sum() - tp  # Column sum minus diagonal
-                    fn = cm[i, :].sum() - tp  # Row sum minus diagonal
-                    tn = total - tp - fp - fn
-                    
-                    precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-                    recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-                    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
-                    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0
-                    accuracy = (tp + tn) / total if total > 0 else 0
-                    support = int(cm[i, :nc].sum())  # Actual instances of this class
-                    
-                    precisions.append(precision)
-                    recalls.append(recall)
-                    f1s.append(f1)
-                    
-                    writer.writerow([class_names[i], int(tp), int(fp), int(fn), int(tn),
-                                   f'{precision:.4f}', f'{recall:.4f}', f'{f1:.4f}',
-                                   f'{specificity:.4f}', f'{accuracy:.4f}', support])
-                
-                # Macro averages
-                macro_p = np.mean(precisions)
-                macro_r = np.mean(recalls)
-                macro_f1 = np.mean(f1s)
-                
-                # Micro averages
-                total_tp = sum(cm[i, i] for i in range(nc))
-                total_fp = sum(cm[:, i].sum() - cm[i, i] for i in range(nc))
-                total_fn = sum(cm[i, :].sum() - cm[i, i] for i in range(nc))
-                micro_p = total_tp / (total_tp + total_fp) if (total_tp + total_fp) > 0 else 0
-                micro_r = total_tp / (total_tp + total_fn) if (total_tp + total_fn) > 0 else 0
-                micro_f1 = 2 * micro_p * micro_r / (micro_p + micro_r) if (micro_p + micro_r) > 0 else 0
-                
-                writer.writerow(['macro_average', '', '', '', '', f'{macro_p:.4f}', f'{macro_r:.4f}', f'{macro_f1:.4f}', '', '', ''])
-                writer.writerow(['micro_average', '', '', '', '', f'{micro_p:.4f}', f'{micro_r:.4f}', f'{micro_f1:.4f}', '', '', int(total)])
-            
-            exports['confusion_matrix_statistics'] = stats_csv_path
-            print(f"[ConfusionMatrix] confusion_matrix_statistics.csv saved")
-            
-            # Copy CSVs to matrices folder
-            for csv_name in ['confusion_matrix_raw.csv', 'confusion_matrix_normalized.csv', 'confusion_matrix_statistics.csv']:
-                src = stats_dir / csv_name
-                dst = matrices_dir / csv_name
-                if src.exists():
-                    shutil.copy(str(src), str(dst))
-            
-            # Copy generated PNG plots from temp folder to matrices folder
-            val_folder = Path(tmpdir) / 'val_cm'
-            if val_folder.exists():
-                for png_name in ['confusion_matrix.png', 'confusion_matrix_normalized.png']:
-                    src_png = val_folder / png_name
-                    if src_png.exists():
-                        shutil.copy(str(src_png), str(matrices_dir / png_name))
-                        exports[png_name.replace('.png', '_png')] = matrices_dir / png_name
-                
-                # Copy validation batch predictions to samples folder
-                samples_dir = matrices_dir.parent / 'samples'
-                if samples_dir.exists():
-                    for jpg_file in val_folder.glob('val_batch*_pred.jpg'):
-                        shutil.copy(str(jpg_file), str(samples_dir / jpg_file.name))
-                    for jpg_file in val_folder.glob('val_batch*_labels.jpg'):
-                        shutil.copy(str(jpg_file), str(samples_dir / jpg_file.name))
-            
-            print(f"[ConfusionMatrix] Statistics and visualizations saved")
-        
-    except Exception as e:
-        print(f"[ConfusionMatrix] Error generating statistics: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    return exports
-
-
 def generate_custom_visualizations(results_csv: Path, curves_folder: Path) -> None:
     """
     Generate custom visualization plots from results.csv data.
@@ -1215,7 +994,6 @@ def generate_custom_visualizations(results_csv: Path, curves_folder: Path) -> No
         # 2. Generate precision_recall.png
         try:
             metric_cols = {
-                # Match YOLO output columns: metrics/precision(B) or precision(all) variants
                 'precision': next((c for c in sample_row.keys() if 'precision' in c.lower()), None),
                 'recall': next((c for c in sample_row.keys() if 'recall' in c.lower()), None),
                 'map50': next((c for c in sample_row.keys() if 'map50' in c.lower() and '95' not in c.lower()), None),
@@ -2006,7 +1784,7 @@ def run_training(
         # Output
         project=project_dir,
         name=exp_name,
-        exist_ok=True,  # Allow using pre-created folder (for logging/stats setup)
+        exist_ok=False,
         save=True,
         save_period=-1,
         
@@ -2060,7 +1838,6 @@ def generate_stats(
     model_name: str,
     config: Dict[str, Any],
     img_size: int = 640,
-    data_yaml: Optional[str] = None,
 ) -> None:
     """
     Generate training statistics, reports, and export additional file formats.
@@ -2073,7 +1850,6 @@ def generate_stats(
         model_name: YOLO model name
         config: Training configuration dictionary
         img_size: Image size used during training (for ONNX export)
-        data_yaml: Path to data.yaml for validation (for confusion matrix stats)
     """
     try:
         experiment_path = Path(f'{project_dir}/{exp_name}')
@@ -2125,14 +1901,13 @@ def generate_stats(
             if train_classes.exists():
                 classes_file = train_classes
         
-        # Export ONNX, obj.names, config files, and confusion matrix stats
+        # Export ONNX, obj.names, and config files
         export_training_outputs(
             experiment_path=experiment_path,
             model_name=model_name,
             config=config,
             classes_file=classes_file,
             img_size=img_size,
-            data_yaml=data_yaml,
         )
     except Exception as e:
         print(f'Could not export additional files: {e}')
@@ -2225,10 +2000,6 @@ def main():
     # Logging
     parser.add_argument('--log-dir', type=str, default='', help='Logging directory')
     
-    # Regeneration mode (skip training, only run validation/stats/visualizations)
-    parser.add_argument('--regenerate-only', type=lambda x: x.lower() == 'true', default=False,
-                        help='Skip training, only regenerate validation, statistics, and visualizations')
-    
     args = parser.parse_args()
     
     # Build config for stats and export
@@ -2271,112 +2042,70 @@ def main():
         'class_weights': args.class_weights,
     }
     
-    # Run training with guaranteed post-processing
-    training_success = False
-    training_error = None
+    # Run training
+    run_training(
+        data_yaml=args.data_yaml,
+        model_name=args.model,
+        weights_dir=args.weights_dir,
+        project_dir=args.project_dir,
+        exp_name=args.exp_name,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        img_size=args.img_size,
+        patience=args.patience,
+        workers=args.workers,
+        lr0=args.lr0,
+        lrf=args.lrf,
+        momentum=args.momentum,
+        weight_decay=args.weight_decay,
+        optimizer=args.optimizer,
+        hsv_h=args.hsv_h,
+        hsv_s=args.hsv_s,
+        hsv_v=args.hsv_v,
+        degrees=args.degrees,
+        translate=args.translate,
+        scale=args.scale,
+        shear=args.shear,
+        perspective=args.perspective,
+        flipud=args.flipud,
+        fliplr=args.fliplr,
+        mosaic=args.mosaic,
+        mixup=args.mixup,
+        copy_paste=args.copy_paste,
+        grayscale=args.grayscale,
+        pretrained=args.pretrained,
+        resume=args.resume,
+        cache=args.cache,
+        amp=args.amp,
+        freeze=args.freeze,
+        device=args.device,
+        # Advanced parameters from microspores.cfg
+        warmup_epochs=args.warmup_epochs,
+        warmup_momentum=args.warmup_momentum,
+        warmup_bias_lr=args.warmup_bias_lr,
+        box_loss=args.box_loss,
+        cls_loss=args.cls_loss,
+        dfl_loss=args.dfl_loss,
+        iou_threshold=args.iou_threshold,
+        label_smoothing=args.label_smoothing,
+        close_mosaic=args.close_mosaic,
+        multi_scale=args.multi_scale,
+        rect=args.rect,
+        # Class focus parameters
+        class_focus_mode=args.class_focus_mode,
+        class_weights=args.class_weights,
+        log_dir=args.log_dir if args.log_dir else None,
+    )
     
-    # Check for regenerate-only mode (skip training, just run stats/visualizations)
-    if args.regenerate_only:
-        print("\n" + "="*70)
-        print("  REGENERATE-ONLY MODE")
-        print("  Skipping training - will only regenerate validation, stats, and visualizations")
-        print("="*70 + "\n")
-        training_success = True  # Treat as success to proceed with stats generation
-    else:
-        try:
-            run_training(
-                data_yaml=args.data_yaml,
-                model_name=args.model,
-                weights_dir=args.weights_dir,
-                project_dir=args.project_dir,
-                exp_name=args.exp_name,
-                epochs=args.epochs,
-                batch_size=args.batch_size,
-                img_size=args.img_size,
-                patience=args.patience,
-                workers=args.workers,
-                lr0=args.lr0,
-                lrf=args.lrf,
-                momentum=args.momentum,
-                weight_decay=args.weight_decay,
-                optimizer=args.optimizer,
-                hsv_h=args.hsv_h,
-                hsv_s=args.hsv_s,
-                hsv_v=args.hsv_v,
-                degrees=args.degrees,
-                translate=args.translate,
-                scale=args.scale,
-                shear=args.shear,
-                perspective=args.perspective,
-                flipud=args.flipud,
-                fliplr=args.fliplr,
-                mosaic=args.mosaic,
-                mixup=args.mixup,
-                copy_paste=args.copy_paste,
-                grayscale=args.grayscale,
-                pretrained=args.pretrained,
-                resume=args.resume,
-                cache=args.cache,
-                amp=args.amp,
-                freeze=args.freeze,
-                device=args.device,
-                # Advanced parameters from microspores.cfg
-                warmup_epochs=args.warmup_epochs,
-                warmup_momentum=args.warmup_momentum,
-                warmup_bias_lr=args.warmup_bias_lr,
-                box_loss=args.box_loss,
-                cls_loss=args.cls_loss,
-                dfl_loss=args.dfl_loss,
-                iou_threshold=args.iou_threshold,
-                label_smoothing=args.label_smoothing,
-                close_mosaic=args.close_mosaic,
-                multi_scale=args.multi_scale,
-                rect=args.rect,
-                # Class focus parameters
-                class_focus_mode=args.class_focus_mode,
-                class_weights=args.class_weights,
-                log_dir=args.log_dir if args.log_dir else None,
-            )
-            training_success = True
-        except KeyboardInterrupt:
-            print("\n" + "="*60)
-            print("  Training interrupted by user (Ctrl+C)")
-            print("  Proceeding with visualization export...")
-            print("="*60 + "\n")
-            training_error = "Interrupted by user"
-        except Exception as e:
-            print("\n" + "="*60)
-            print(f"  Training error: {e}")
-            print("  Attempting to export available results...")
-            print("="*60 + "\n")
-            training_error = str(e)
-    
-    # ALWAYS generate stats and export files (even if training failed/interrupted)
-    # This ensures visualizations are organized even for partial runs
-    experiment_path = Path(f'{args.project_dir}/{args.exp_name}')
-    if experiment_path.exists():
-        try:
-            generate_stats(
-                project_dir=args.project_dir,
-                exp_name=args.exp_name,
-                dataset_dir=args.dataset_dir,
-                model_name=args.model,
-                config=config,
-                img_size=args.img_size,
-                data_yaml=args.data_yaml,
-            )
-            if not training_success:
-                print(f"\n[Post-Training] Visualization export completed despite training issue: {training_error}")
-        except Exception as export_error:
-            print(f"\n[Post-Training] Warning: Could not export visualizations: {export_error}")
-    else:
-        print(f"\n[Post-Training] Warning: Experiment folder not found: {experiment_path}")
-    
-    # Re-raise if training failed (so bash script can detect exit code)
-    if training_error and not isinstance(training_error, str) or training_error == "Interrupted by user":
-        if training_error == "Interrupted by user":
-            import sys
-            sys.exit(130)  # Standard SIGINT exit code
+    # Generate stats and export additional files
+    generate_stats(
+        project_dir=args.project_dir,
+        exp_name=args.exp_name,
+        dataset_dir=args.dataset_dir,
+        model_name=args.model,
+        config=config,
+        img_size=args.img_size,
+    )
 
 
 if __name__ == '__main__':
