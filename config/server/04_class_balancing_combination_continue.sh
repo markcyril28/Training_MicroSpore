@@ -116,7 +116,7 @@ ADDITIONAL_EPOCHS_LIST=(
 DATASET_LIST=(
     # "Dataset_1_TEST"            # Test dataset
     "Dataset_2_OPTIMIZATION"      # Optimization dataset (active)
-    # "Dataset_3_FINAL_RUN"       # Final run dataset (uncomment to add)
+    # "Dataset_3_TEST_TRAIN_SPLIT" # Test train split dataset (uncomment to add)
 )
 
 # Default dataset name (first in list)
