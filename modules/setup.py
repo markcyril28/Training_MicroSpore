@@ -5,6 +5,6 @@ setup(
     version="1.0.0",
     packages=find_packages(),
     python_requires=">=3.8",
-    author="Microspore Phenotyping Team",
+    author="Mark Cyril R. Mercado",
     description="Training modules for microspore phenotyping YOLO models",
 )

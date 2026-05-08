@@ -46,4 +46,4 @@ except ImportError:
     pass
 
 __version__ = "1.0.0"
-__author__ = "Microspore Phenotyping Team"
+__author__ = "Mark Cyril R. Mercado"
