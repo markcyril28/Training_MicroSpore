@@ -1999,6 +1999,10 @@ def main():
     
     # Logging
     parser.add_argument('--log-dir', type=str, default='', help='Logging directory')
+
+    # Wrapper modes
+    parser.add_argument('--regenerate-only', type=lambda x: x.lower() == 'true', default=False,
+                        help='Regenerate stats/exports for an existing experiment without training')
     
     args = parser.parse_args()
     
@@ -2042,60 +2046,66 @@ def main():
         'class_weights': args.class_weights,
     }
     
-    # Run training
-    run_training(
-        data_yaml=args.data_yaml,
-        model_name=args.model,
-        weights_dir=args.weights_dir,
-        project_dir=args.project_dir,
-        exp_name=args.exp_name,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        img_size=args.img_size,
-        patience=args.patience,
-        workers=args.workers,
-        lr0=args.lr0,
-        lrf=args.lrf,
-        momentum=args.momentum,
-        weight_decay=args.weight_decay,
-        optimizer=args.optimizer,
-        hsv_h=args.hsv_h,
-        hsv_s=args.hsv_s,
-        hsv_v=args.hsv_v,
-        degrees=args.degrees,
-        translate=args.translate,
-        scale=args.scale,
-        shear=args.shear,
-        perspective=args.perspective,
-        flipud=args.flipud,
-        fliplr=args.fliplr,
-        mosaic=args.mosaic,
-        mixup=args.mixup,
-        copy_paste=args.copy_paste,
-        grayscale=args.grayscale,
-        pretrained=args.pretrained,
-        resume=args.resume,
-        cache=args.cache,
-        amp=args.amp,
-        freeze=args.freeze,
-        device=args.device,
-        # Advanced parameters from microspores.cfg
-        warmup_epochs=args.warmup_epochs,
-        warmup_momentum=args.warmup_momentum,
-        warmup_bias_lr=args.warmup_bias_lr,
-        box_loss=args.box_loss,
-        cls_loss=args.cls_loss,
-        dfl_loss=args.dfl_loss,
-        iou_threshold=args.iou_threshold,
-        label_smoothing=args.label_smoothing,
-        close_mosaic=args.close_mosaic,
-        multi_scale=args.multi_scale,
-        rect=args.rect,
-        # Class focus parameters
-        class_focus_mode=args.class_focus_mode,
-        class_weights=args.class_weights,
-        log_dir=args.log_dir if args.log_dir else None,
-    )
+    if args.regenerate_only:
+        experiment_path = Path(args.project_dir) / args.exp_name
+        if not experiment_path.exists():
+            raise SystemExit(f"Cannot regenerate missing experiment directory: {experiment_path}")
+        print(f"[Regenerate] Skipping training and regenerating outputs for: {experiment_path}")
+    else:
+        # Run training
+        run_training(
+            data_yaml=args.data_yaml,
+            model_name=args.model,
+            weights_dir=args.weights_dir,
+            project_dir=args.project_dir,
+            exp_name=args.exp_name,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            img_size=args.img_size,
+            patience=args.patience,
+            workers=args.workers,
+            lr0=args.lr0,
+            lrf=args.lrf,
+            momentum=args.momentum,
+            weight_decay=args.weight_decay,
+            optimizer=args.optimizer,
+            hsv_h=args.hsv_h,
+            hsv_s=args.hsv_s,
+            hsv_v=args.hsv_v,
+            degrees=args.degrees,
+            translate=args.translate,
+            scale=args.scale,
+            shear=args.shear,
+            perspective=args.perspective,
+            flipud=args.flipud,
+            fliplr=args.fliplr,
+            mosaic=args.mosaic,
+            mixup=args.mixup,
+            copy_paste=args.copy_paste,
+            grayscale=args.grayscale,
+            pretrained=args.pretrained,
+            resume=args.resume,
+            cache=args.cache,
+            amp=args.amp,
+            freeze=args.freeze,
+            device=args.device,
+            # Advanced parameters from microspores.cfg
+            warmup_epochs=args.warmup_epochs,
+            warmup_momentum=args.warmup_momentum,
+            warmup_bias_lr=args.warmup_bias_lr,
+            box_loss=args.box_loss,
+            cls_loss=args.cls_loss,
+            dfl_loss=args.dfl_loss,
+            iou_threshold=args.iou_threshold,
+            label_smoothing=args.label_smoothing,
+            close_mosaic=args.close_mosaic,
+            multi_scale=args.multi_scale,
+            rect=args.rect,
+            # Class focus parameters
+            class_focus_mode=args.class_focus_mode,
+            class_weights=args.class_weights,
+            log_dir=args.log_dir if args.log_dir else None,
+        )
     
     # Generate stats and export additional files
     generate_stats(
