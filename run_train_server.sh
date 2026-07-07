@@ -105,9 +105,19 @@ CONFIG_SCRIPTS=(
     #"04_class_balancing_combination_continue_4_5.2_phase_1.sh"
     #"04_class_balancing_combination_continue_4_5.2_phase_2.sh"
     "04_class_balancing_combination_continue_4_5.2_phase_3.sh"
+    #"05_five_fold_continue_from_continue_3.sh"
     #"05_optimizer_combination.sh"                  # Optimizer variations
     #"z_epoch_combination.sh"                       # Epoch variations
 )
+
+# Optional whitespace-separated wrapper hook. Example:
+#   CONFIG_SCRIPTS_OVERRIDE="05_five_fold_continue_from_continue_3.sh" ./run_train_server.sh
+if [ -n "${CONFIG_SCRIPTS_OVERRIDE:-}" ]; then
+    CONFIG_SCRIPTS=()
+    for config_script in ${CONFIG_SCRIPTS_OVERRIDE}; do
+        CONFIG_SCRIPTS+=("${config_script}")
+    done
+fi
 
 # Device Configuration (applies to all configs)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -453,6 +463,10 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     # Set dataset-specific paths (using COMMON_DATASETS_DIR from config)
     DATASET_PATH="${SCRIPT_DIR}/${COMMON_DATASETS_DIR}/${DATASET_NAME}"
     DATA_YAML="${DATASET_PATH}/data.yaml"
+    DATASET_SAFE_NAME=$(printf '%s' "${DATASET_NAME}" | sed 's|[\\/]|_|g; s|[^A-Za-z0-9_.-]|_|g; s|__*|_|g; s|^_||; s|_$||')
+    if [ -z "${DATASET_SAFE_NAME}" ]; then
+        DATASET_SAFE_NAME="dataset"
+    fi
     
     # Validate dataset exists
     if [ ! -f "${DATA_YAML}" ]; then
@@ -571,7 +585,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
             fi
             
             # Get continue number for dynamic naming
-            BASE_PATTERN="${DATASET_NAME}_${MODEL_NAME}"
+            BASE_PATTERN="${DATASET_SAFE_NAME}_${MODEL_NAME}"
             CONTINUE_NUM=$(get_next_continue_number "${OUTPUT_DIR}" "${BASE_PATTERN}")
             
             print_info "Continuing training from: ${YOLO_MODEL_PATH}"
@@ -607,9 +621,9 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     # Create run identifier for tracking using unified naming scheme
     # Format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}[_contN]
     if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
-        RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}_cont${CONTINUE_NUM}"
+        RUN_ID="${DATASET_SAFE_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}_cont${CONTINUE_NUM}"
     else
-        RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
+        RUN_ID="${DATASET_SAFE_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
     fi
     
     #===========================================================================
@@ -620,7 +634,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     if [ "$SKIP_EXISTING" = true ] || [ "$REGENERATE_ONLY" = true ]; then
         # Use || true to prevent set -e from exiting when no match found (returns 1)
         # Pass OUTPUT_DIR as the 10th parameter for the shared function
-        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$CLASS_FOCUS_MODE" "$OUTPUT_DIR") || true
+        existing_dir=$(check_training_exists "$DATASET_SAFE_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$CLASS_FOCUS_MODE" "$OUTPUT_DIR") || true
         
         if [ -n "$existing_dir" ]; then
             if [ "$REGENERATE_ONLY" = true ]; then
@@ -651,9 +665,9 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
         # Use different naming for continued training to avoid prefix duplication
         if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
             # Use the continue-specific naming function
-            EXP_NAME=$(generate_continue_exp_name "$DATASET_NAME" "$MODEL_NAME" "$COLOR_MODE" "$IMG_SIZE" "$CLASS_FOCUS_MODE" "$OPTIMIZER" "$EPOCHS" "$BATCH_SIZE" "$LR0" "$TIMESTAMP" "$CONTINUE_NUM")
+            EXP_NAME=$(generate_continue_exp_name "$DATASET_SAFE_NAME" "$MODEL_NAME" "$COLOR_MODE" "$IMG_SIZE" "$CLASS_FOCUS_MODE" "$OPTIMIZER" "$EPOCHS" "$BATCH_SIZE" "$LR0" "$TIMESTAMP" "$CONTINUE_NUM")
         else
-            EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP" "$CLASS_FOCUS_MODE")
+            EXP_NAME=$(generate_exp_name "$DATASET_SAFE_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP" "$CLASS_FOCUS_MODE")
         fi
         
         # Safety: Truncate experiment name if too long (filesystem limit is 255 chars)
@@ -676,7 +690,10 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     print_header "Training Run ${CURRENT_RUN}/${TOTAL_COMBINATIONS}"
     
     echo "Configuration:"
-    echo "  - Dataset:    ${DATASET_NAME}"
+    echo "  - Dataset:    ${DATASET_SAFE_NAME}"
+    if [ "${DATASET_SAFE_NAME}" != "${DATASET_NAME}" ]; then
+        echo "  - Dataset Src:${DATASET_NAME}"
+    fi
     echo "  - Data:       ${DATA_YAML}"
     if [ "${REGENERATE_ONLY}" = true ]; then
         echo "  - Mode:       REGENERATE ONLY (no training)"
