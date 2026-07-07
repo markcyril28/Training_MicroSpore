@@ -472,7 +472,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     if [ ! -f "${DATA_YAML}" ]; then
         print_error "Dataset data.yaml not found: ${DATA_YAML}"
         print_warning "Skipping dataset: ${DATASET_NAME}"
-        SKIPPED_RUNS+=("${DATASET_NAME}_*")
+        SKIPPED_RUNS+=("${DATASET_NAME}_* (missing data.yaml: ${DATA_YAML})")
         continue
     fi
     
@@ -643,13 +643,13 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
             else
                 # Normal skip mode
                 print_warning "Skipping ${RUN_ID} - already trained: $(basename "$existing_dir")"
-                SKIPPED_RUNS+=("${RUN_ID}")
+                SKIPPED_RUNS+=("${RUN_ID} (already trained: $(basename "$existing_dir"))")
                 continue
             fi
         elif [ "$REGENERATE_ONLY" = true ]; then
             # Regenerate mode but no existing training found
             print_warning "Skipping ${RUN_ID} - no existing training to regenerate"
-            SKIPPED_RUNS+=("${RUN_ID}")
+            SKIPPED_RUNS+=("${RUN_ID} (no existing training to regenerate)")
             continue
         fi
     fi
@@ -962,7 +962,7 @@ echo "GPU: AMD Instinct MI210 (64GB HBM2e)"
 echo ""
 
 if [ ${#GLOBAL_SKIPPED_RUNS[@]} -gt 0 ]; then
-    print_warning "Skipped - already trained (${#GLOBAL_SKIPPED_RUNS[@]}):"
+    print_warning "Skipped - not run (${#GLOBAL_SKIPPED_RUNS[@]}):"
     for run in "${GLOBAL_SKIPPED_RUNS[@]}"; do
         echo "  ⊘ ${run}"
     done

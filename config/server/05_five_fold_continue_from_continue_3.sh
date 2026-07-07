@@ -8,9 +8,9 @@
 #   trained_models_output/server/04_class_balancing_combination_continue_3
 #
 # Dataset layout:
-#   TRAINING_WD/Datasets_4_Five_Fold_Strategy/Five_Fold/fold_1/data.yaml
+#   TRAINING_WD/Five_Fold/fold_1/data.yaml
 #   ...
-#   TRAINING_WD/Datasets_4_Five_Fold_Strategy/Five_Fold/fold_5/data.yaml
+#   TRAINING_WD/Five_Fold/fold_5/data.yaml
 #
 # Each fold uses its own train/val split. After training completes, compare the
 # five output folders and select the best-performing fold/model.
@@ -46,12 +46,19 @@ AUTO_DETECT_MODEL_FILTER=""
 # FIVE-FOLD DATASETS
 #===============================================================================
 
+FIVE_FOLD_DATASET_ROOT="${FIVE_FOLD_DATASET_ROOT:-Five_Fold}"
+
+if [ ! -f "${SCRIPT_DIR}/${COMMON_DATASETS_DIR}/${FIVE_FOLD_DATASET_ROOT}/fold_1/data.yaml" ] && \
+   [ -f "${SCRIPT_DIR}/${COMMON_DATASETS_DIR}/Datasets_4_Five_Fold_Strategy/Five_Fold/fold_1/data.yaml" ]; then
+    FIVE_FOLD_DATASET_ROOT="Datasets_4_Five_Fold_Strategy/Five_Fold"
+fi
+
 DATASET_LIST=(
-    "Datasets_4_Five_Fold_Strategy/Five_Fold/fold_1"
-    "Datasets_4_Five_Fold_Strategy/Five_Fold/fold_2"
-    "Datasets_4_Five_Fold_Strategy/Five_Fold/fold_3"
-    "Datasets_4_Five_Fold_Strategy/Five_Fold/fold_4"
-    "Datasets_4_Five_Fold_Strategy/Five_Fold/fold_5"
+    "${FIVE_FOLD_DATASET_ROOT}/fold_1"
+    "${FIVE_FOLD_DATASET_ROOT}/fold_2"
+    "${FIVE_FOLD_DATASET_ROOT}/fold_3"
+    "${FIVE_FOLD_DATASET_ROOT}/fold_4"
+    "${FIVE_FOLD_DATASET_ROOT}/fold_5"
 )
 
 DEFAULT_DATASET="${DATASET_LIST[0]}"
