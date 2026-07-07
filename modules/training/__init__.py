@@ -42,11 +42,31 @@ def __getattr__(name):
     if name == 'generate_balancing_report':
         from .class_balancer import generate_balancing_report
         return generate_balancing_report
-    # Training runner functions
-    if name in ('run_training', 'generate_stats', 'load_or_download_model', 'export_to_onnx'):
-        from . import train as train_module
-        return getattr(train_module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Wrapper functions keep `from modules.training import *` import-light. The real
+# train.py module imports Ultralytics at module import time, so loading it here
+# would break utility-only workflows on machines that have not activated the
+# training environment yet.
+def run_training(*args, **kwargs):
+    from .train import run_training as _run_training
+    return _run_training(*args, **kwargs)
+
+
+def generate_stats(*args, **kwargs):
+    from .train import generate_stats as _generate_stats
+    return _generate_stats(*args, **kwargs)
+
+
+def load_or_download_model(*args, **kwargs):
+    from .train import load_or_download_model as _load_or_download_model
+    return _load_or_download_model(*args, **kwargs)
+
+
+def export_to_onnx(*args, **kwargs):
+    from .train import export_to_onnx as _export_to_onnx
+    return _export_to_onnx(*args, **kwargs)
 
 __all__ = [
     # Core training
