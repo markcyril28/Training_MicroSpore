@@ -104,8 +104,8 @@ CONFIG_SCRIPTS=(
     # Three-phase continuation (recommended):
     #"04_class_balancing_combination_continue_4_5.2_phase_1.sh"
     #"04_class_balancing_combination_continue_4_5.2_phase_2.sh"
-    "04_class_balancing_combination_continue_4_5.2_phase_3.sh"
-    #"05_five_fold_continue_from_continue_3.sh"
+    #"04_class_balancing_combination_continue_4_5.2_phase_3.sh"
+    "05_five_fold_continue_from_continue_3.sh"
     #"05_optimizer_combination.sh"                  # Optimizer variations
     #"z_epoch_combination.sh"                       # Epoch variations
 )
