@@ -23,34 +23,34 @@ YOLO_MODELS=(
     # "yolov5su.pt"   # small    - fast, good accuracy
     # "yolov5mu.pt"   # medium   - balanced
     # "yolov5lu.pt"   # large    - slower, better accuracy
-    # "yolov5xu.pt"   # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    #"yolov5xu.pt"     # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
     
     # YOLOv8 variants - Recommended
     # "yolov8n.pt"    # nano     - fastest, lowest accuracy
     # "yolov8s.pt"    # small    - fast, good accuracy
     # "yolov8m.pt"    # medium   - balanced
-    #"yolov8l.pt"      # large    - slower, better accuracy
-    "yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
+    # "yolov8l.pt"    # large    - slower, better accuracy
+    #"yolov8x.pt"      # xlarge   - slowest, best accuracy (OPTIMAL for MI210)
     
     # YOLOv9 variants - GELAN/PGI architecture
     # "yolov9t.pt"    # tiny     - fastest, smallest
     # "yolov9s.pt"    # small    - fast, lightweight
     # "yolov9m.pt"    # medium   - balanced
     # "yolov9c.pt"    # compact  - efficient accuracy
-    # "yolov9e.pt"    # extended - best accuracy (OPTIMAL for MI210)
+    #"yolov9e.pt"      # extended - best accuracy (OPTIMAL for MI210)
     
     # YOLOv10 variants
     # "yolov10n.pt"   # nano     - fastest
     # "yolov10s.pt"   # small    - fast
     # "yolov10m.pt"   # medium   - balanced
     # "yolov10l.pt"   # large    - slower
-    # "yolov10x.pt"   # xlarge   - best accuracy (OPTIMAL for MI210)
+    #"yolov10x.pt"     # xlarge   - best accuracy (OPTIMAL for MI210)
     
     # YOLO11 variants - Latest (note: named 'yolo11' not 'yolov11')
     # "yolo11n.pt"    # nano     - fastest
     # "yolo11s.pt"    # small    - fast
     # "yolo11m.pt"    # medium   - balanced
-    #"yolo11l.pt"      # large    - slower
+    # "yolo11l.pt"    # large    - slower
     #"yolo11x.pt"      # xlarge   - best accuracy (OPTIMAL for MI210 64GB)
 )
 
@@ -95,47 +95,43 @@ DEFAULT_DATASET="${DATASET_LIST[0]}"
 # PATIENCE:   ↑ waits longer before stopping            | ↓ stops earlier, saves time
 # WORKERS:    ↑ faster data loading (match CPU cores)   | ↓ less CPU usage
 EPOCHS_LIST=(
-    # 100                   # standard training
     # 10                    # quick test
-    #150                     # optimal training (early stopping will trigger if converged)
-    200                   # long training (MI210 can handle extended training)
+    # 100                   # standard training
+    # 150                   # optimal training (early stopping will trigger if converged)
+    200                     # long training (MI210 can handle extended training)
     # 300                   # maximum training
 )
 
 PATIENCE_LIST=(
+    # 50                    # standard patience
     # 25                    # quick stopping
-    #50                      # standard patience (optimal for 150 epochs)
-    150                   # balanced patience (optimal for convergence detection)
+    150                     # balanced patience (optimal for convergence detection)
 )
 
 BATCH_SIZE_LIST=(
-    # 4                     # safe for yolov8x/yolo11x at 1280 resolution
-    8                       # optimal for yolov8x at 1280 resolution (MI210 64GB)
-    # 16                    # may OOM with xlarge models at 1280 resolution
-    #24
-    #32                     # for 640/800/1024 resolution - safe for xlarge models
-    #48
-    # 64                    # optimal for MI210 64GB with medium models
+    # 8                     # low (for debugging)
+    # 16                    # moderate
+    #32                    # standard for high-end GPUs
+    64                      # optimal for MI210 64GB HBM2e (maximum throughput)
     # 128                   # very high batch size (may need gradient accumulation)
 )
 
 IMG_SIZE_LIST=(
-    #320                   # fast, low resolution
-    #512                   # medium resolution
-    #608                   # from microspores.cfg (width/height=608)
-    #640                   # standard resolution
-    #800                   # high resolution
+    # 320                   # fast, low resolution
+    # 512                   # medium resolution
+    # 608                   # from microspores.cfg (width/height=608)
+    640                   # standard resolution
+    # 800                   # high resolution
     #1024                    # very high resolution (optimal for MI210 64GB VRAM)
-    1280                  # maximum (for detecting very small objects)
+    # 1280                  # maximum (for detecting very small objects)
 )
 
 WORKERS_LIST=(
     # 2                     # low CPU
     # 4                     # standard
     # 8                     # moderate (balanced for data loading)
-    16                      # optimal for 1280 - reduces CPU contention with large images
-    # 32                    # server with 32 threads (better for smaller images)
-    # 64                    # maximum (use all threads - may cause contention)
+    16                      # server with 32 threads (optimal: ~half of available threads)
+    # 32                    # maximum (use all threads - may cause contention)
 )
 
 # Learning Rate & Optimizer
@@ -171,12 +167,12 @@ WEIGHT_DECAY_LIST=(
 )
 
 OPTIMIZER_LIST=(
-    "auto"                  # auto-select (recommended)
-    # "SGD"                 # Stochastic Gradient Descent
-    # "Adam"                # Adam optimizer
-    # "AdamW"               # Adam with weight decay
-    # "NAdam"               # Nesterov Adam
-    # "RAdam"               # Rectified Adam
+    #"auto"                  # auto-select (recommended)
+    "SGD"                 # Stochastic Gradient Descent
+    "Adam"                # Adam optimizer
+    "AdamW"               # Adam with weight decay
+    "NAdam"               # Nesterov Adam
+    "RAdam"               # Rectified Adam
 )
 
 # Grayscale Configuration
@@ -185,8 +181,8 @@ OPTIMIZER_LIST=(
 # Select image color mode for training
 # 'RGB' = color (3 channels), 'grayscale' = grayscale (converted to 3-channel gray)
 COLOR_MODE_LIST=(
-    #"RGB"                   # RGB color images (default)
-    "grayscale"           # grayscale images
+    "RGB"                   # RGB color images (default)
+    # "grayscale"           # grayscale images
 )
 
 # Class Focus Configuration (Address Class Imbalance)
@@ -215,9 +211,9 @@ COLOR_MODE_LIST=(
 
 CLASS_FOCUS_MODE_LIST=(
     "none"                  # No class focus (original distribution)
-    #"auto"                # Auto-equalize all classes (recommended for production)
-    #"sqrt"                # Square root balancing (gentler, good for mild imbalance)
-    #"manual"              # Manual class selection with specified fold
+    "auto"                # Auto-equalize all classes (recommended for production)
+    "sqrt"                # Square root balancing (gentler, good for mild imbalance)
+    "manual"              # Manual class selection with specified fold
 )
 
 # Classes to focus on in "manual" mode (comma-separated, no spaces)
@@ -346,8 +342,7 @@ COPY_PASTE_LIST=(
 WARMUP_EPOCHS_LIST=(
     # 3.0                   # standard warmup (from cfg: burn_in=1000)
     # 0.0                   # no warmup
-    # 5.0                   # extended warmup
-    8.0                     # optimal warmup for 1280 (longer stabilization needed)
+    5.0                     # extended warmup
 )
 
 WARMUP_MOMENTUM_LIST=(
@@ -406,7 +401,7 @@ LABEL_SMOOTHING_LIST=(
 CLOSE_MOSAIC_LIST=(
     # 10                    # disable mosaic for last 10 epochs
     # 0                     # never disable mosaic
-    30                      # disable mosaic for last 30 epochs (optimal for 1280 fine-tuning)
+    20                      # disable mosaic for last 20 epochs (better fine-tuning)
 )
 
 # Multi-scale Training
@@ -414,8 +409,8 @@ CLOSE_MOSAIC_LIST=(
 # MULTI_SCALE: Train with varying image sizes (+/- 50%)
 # RECT:        Rectangular training (non-square images, faster)
 MULTI_SCALE_LIST=(
-    # false                 # fixed image size
-    true                    # multi-scale training (optimal for 1280 - better generalization)
+    #false                   # fixed image size
+    true                  # multi-scale training (MI210 can handle this well)
 )
 
 RECT_LIST=(
@@ -437,8 +432,8 @@ PRETRAINED_LIST=(
 RESUME=false                # Resume training from last checkpoint
 
 CACHE_LIST=(
-    "disk"                  # disk cache (optimal for 1280 - large images consume RAM)
-    # "ram"                 # RAM cache (use for smaller image sizes)
+    # "disk"                # disk cache (use if RAM limited)
+    "ram"                   # RAM cache (fastest - server likely has plenty of RAM)
     # false                 # no cache (slowest)
 )
 

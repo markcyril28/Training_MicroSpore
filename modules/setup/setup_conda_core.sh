@@ -139,6 +139,7 @@ handle_existing_env() {
                 pip install --upgrade \
                     opencv-python \
                     numpy \
+                    pillow \
                     matplotlib \
                     seaborn \
                     pandas \
@@ -264,6 +265,7 @@ install_dependencies() {
     pip install \
         opencv-python \
         numpy \
+        pillow \
         matplotlib \
         seaborn \
         pandas \

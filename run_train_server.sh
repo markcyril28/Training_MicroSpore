@@ -30,6 +30,9 @@ REST_TIME_PER_RUN=60          # GPU cooldown between runs (seconds, 0=disabled)
 CLEAR_LOGS_ON_START=false     # Delete previous logs before training
 CLEAR_OUTPUT_ON_START=false   # Delete previous model outputs before training
 SKIP_EXISTING=true            # Skip if model with same params already exists
+REGENERATE_ONLY=false        # Set true to only regenerate stats/plots (no training)
+                              # Use this to re-export outputs for existing trained models
+                              # Set SKIP_EXISTING=false when using REGENERATE_ONLY=true
 #===============================================================================
 
 # Get script directory (modules are in the same directory)
@@ -95,11 +98,26 @@ CONFIG_SCRIPTS=(
     #"03_img_size_combination_a.sh"              # Image size variations
     #"03_img_size_combination_b.sh"
     #"03_img_size_combination_c.sh"
-    #"04_class_balancing_combination.sh"      # Class balancing strategies
-    "04_class_balancing_combination_continue.sh"  # Continue from trained model
-    #"05_optimizer_combination.sh"            # Optimizer variations
-    #"z_epoch_combination.sh"                # Epoch variations
+    #"04_class_balancing_combination.sh"            # Class balancing strategies
+    #"04_class_balancing_combination_continue.sh"    # Continue from trained model
+    #"04_class_balancing_combination_continue_2.sh"
+    # Three-phase continuation (recommended):
+    #"04_class_balancing_combination_continue_4_5.2_phase_1.sh"
+    #"04_class_balancing_combination_continue_4_5.2_phase_2.sh"
+    #"04_class_balancing_combination_continue_4_5.2_phase_3.sh"
+    "05_five_fold_continue_from_continue_3.sh"
+    #"05_optimizer_combination.sh"                  # Optimizer variations
+    #"z_epoch_combination.sh"                       # Epoch variations
 )
+
+# Optional whitespace-separated wrapper hook. Example:
+#   CONFIG_SCRIPTS_OVERRIDE="05_five_fold_continue_from_continue_3.sh" ./run_train_server.sh
+if [ -n "${CONFIG_SCRIPTS_OVERRIDE:-}" ]; then
+    CONFIG_SCRIPTS=()
+    for config_script in ${CONFIG_SCRIPTS_OVERRIDE}; do
+        CONFIG_SCRIPTS+=("${config_script}")
+    done
+fi
 
 # Device Configuration (applies to all configs)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -445,6 +463,10 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     # Set dataset-specific paths (using COMMON_DATASETS_DIR from config)
     DATASET_PATH="${SCRIPT_DIR}/${COMMON_DATASETS_DIR}/${DATASET_NAME}"
     DATA_YAML="${DATASET_PATH}/data.yaml"
+    DATASET_SAFE_NAME=$(printf '%s' "${DATASET_NAME}" | sed 's|[\\/]|_|g; s|[^A-Za-z0-9_.-]|_|g; s|__*|_|g; s|^_||; s|_$||')
+    if [ -z "${DATASET_SAFE_NAME}" ]; then
+        DATASET_SAFE_NAME="dataset"
+    fi
     
     # Validate dataset exists
     if [ ! -f "${DATA_YAML}" ]; then
@@ -546,13 +568,24 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
             
             if [ -n "${DETECTED_BASE_MODEL}" ]; then
                 MODEL_NAME="${DETECTED_BASE_MODEL}"
+                print_info "Extracted model architecture from name: ${MODEL_NAME}"
             else
-                # Fallback to just adding _cont suffix (may still cause issues)
-                MODEL_NAME="${CUSTOM_WEIGHTS_BASENAME}_cont"
+                # Fallback: Try to extract model architecture from the .pt file itself
+                print_warning "Could not extract model from experiment name, trying .pt file..."
+                DETECTED_BASE_MODEL=$(extract_model_from_pt_file "${EFFECTIVE_WEIGHTS_PATH}")
+                
+                if [ -n "${DETECTED_BASE_MODEL}" ]; then
+                    MODEL_NAME="${DETECTED_BASE_MODEL}"
+                    print_info "Extracted model architecture from .pt file: ${MODEL_NAME}"
+                else
+                    # Last resort: use the YOLO_MODEL from config (e.g., yolov8x.pt)
+                    MODEL_NAME=$(basename "${YOLO_MODEL}" .pt)
+                    print_warning "Using config model as fallback: ${MODEL_NAME}"
+                fi
             fi
             
             # Get continue number for dynamic naming
-            BASE_PATTERN="${DATASET_NAME}_${MODEL_NAME}"
+            BASE_PATTERN="${DATASET_SAFE_NAME}_${MODEL_NAME}"
             CONTINUE_NUM=$(get_next_continue_number "${OUTPUT_DIR}" "${BASE_PATTERN}")
             
             print_info "Continuing training from: ${YOLO_MODEL_PATH}"
@@ -588,34 +621,58 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     # Create run identifier for tracking using unified naming scheme
     # Format: {dataset}_{model}_{color}_img{size}_{balance}_{optimizer}_e{epochs}_b{batch}_lr{lr0}[_contN]
     if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
-        RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}_cont${CONTINUE_NUM}"
+        RUN_ID="${DATASET_SAFE_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}_cont${CONTINUE_NUM}"
     else
-        RUN_ID="${DATASET_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
+        RUN_ID="${DATASET_SAFE_NAME}_${MODEL_NAME}_${GRAY_DISPLAY}_img${IMG_SIZE}_${BALANCE_DISPLAY}_${OPTIMIZER}_e${EPOCHS}_b${BATCH_SIZE}_lr${LR0_DISPLAY}"
     fi
     
     #===========================================================================
     # CHECK IF TRAINING ALREADY EXISTS (SKIP IF ENABLED)
+    # In REGENERATE_ONLY mode, we want to find existing folders to regenerate
     #===========================================================================
-    if [ "$SKIP_EXISTING" = true ]; then
+    existing_dir=""
+    if [ "$SKIP_EXISTING" = true ] || [ "$REGENERATE_ONLY" = true ]; then
         # Use || true to prevent set -e from exiting when no match found (returns 1)
         # Pass OUTPUT_DIR as the 10th parameter for the shared function
-        existing_dir=$(check_training_exists "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$CLASS_FOCUS_MODE" "$OUTPUT_DIR") || true
+        existing_dir=$(check_training_exists "$DATASET_SAFE_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$CLASS_FOCUS_MODE" "$OUTPUT_DIR") || true
+        
         if [ -n "$existing_dir" ]; then
-            print_warning "Skipping ${RUN_ID} - already trained: $(basename "$existing_dir")"
+            if [ "$REGENERATE_ONLY" = true ]; then
+                # In regenerate mode, use the existing directory
+                print_info "Found existing training for regeneration: $(basename "$existing_dir")"
+            else
+                # Normal skip mode
+                print_warning "Skipping ${RUN_ID} - already trained: $(basename "$existing_dir")"
+                SKIPPED_RUNS+=("${RUN_ID}")
+                continue
+            fi
+        elif [ "$REGENERATE_ONLY" = true ]; then
+            # Regenerate mode but no existing training found
+            print_warning "Skipping ${RUN_ID} - no existing training to regenerate"
             SKIPPED_RUNS+=("${RUN_ID}")
             continue
         fi
     fi
     
     # Generate experiment name with timestamp and parameters
-    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    
-    # Use different naming for continued training to avoid prefix duplication
-    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
-        # Use the continue-specific naming function
-        EXP_NAME=$(generate_continue_exp_name "$DATASET_NAME" "$MODEL_NAME" "$COLOR_MODE" "$IMG_SIZE" "$CLASS_FOCUS_MODE" "$OPTIMIZER" "$EPOCHS" "$BATCH_SIZE" "$LR0" "$TIMESTAMP" "$CONTINUE_NUM")
+    # In REGENERATE_ONLY mode, use the existing directory name
+    if [ "$REGENERATE_ONLY" = true ] && [ -n "$existing_dir" ]; then
+        EXP_NAME=$(basename "$existing_dir")
+        print_info "Using existing experiment: ${EXP_NAME}"
     else
-        EXP_NAME=$(generate_exp_name "$DATASET_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP" "$CLASS_FOCUS_MODE")
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        
+        # Use different naming for continued training to avoid prefix duplication
+        if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
+            # Use the continue-specific naming function
+            EXP_NAME=$(generate_continue_exp_name "$DATASET_SAFE_NAME" "$MODEL_NAME" "$COLOR_MODE" "$IMG_SIZE" "$CLASS_FOCUS_MODE" "$OPTIMIZER" "$EPOCHS" "$BATCH_SIZE" "$LR0" "$TIMESTAMP" "$CONTINUE_NUM")
+        else
+            EXP_NAME=$(generate_exp_name "$DATASET_SAFE_NAME" "$MODEL_NAME" "$EPOCHS" "$BATCH_SIZE" "$IMG_SIZE" "$LR0" "$OPTIMIZER" "$COLOR_MODE" "$TIMESTAMP" "$CLASS_FOCUS_MODE")
+        fi
+        
+        # Safety: Truncate experiment name if too long (filesystem limit is 255 chars)
+        # Leave room for suffixes like _best.pt, _last.pt, etc.
+        EXP_NAME=$(truncate_exp_name "${EXP_NAME}" 200)
     fi
     
     #===========================================================================
@@ -633,9 +690,15 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     print_header "Training Run ${CURRENT_RUN}/${TOTAL_COMBINATIONS}"
     
     echo "Configuration:"
-    echo "  - Dataset:    ${DATASET_NAME}"
+    echo "  - Dataset:    ${DATASET_SAFE_NAME}"
+    if [ "${DATASET_SAFE_NAME}" != "${DATASET_NAME}" ]; then
+        echo "  - Dataset Src:${DATASET_NAME}"
+    fi
     echo "  - Data:       ${DATA_YAML}"
-    if [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
+    if [ "${REGENERATE_ONLY}" = true ]; then
+        echo "  - Mode:       REGENERATE ONLY (no training)"
+        echo "  - Target:     ${EXP_NAME}"
+    elif [ "${CONTINUE_FROM_CUSTOM:-false}" = true ] && [ "${CONTINUE_NUM:-0}" -gt 0 ]; then
         echo "  - Mode:       CONTINUE TRAINING (iteration #${CONTINUE_NUM})"
         echo "  - Base Model: ${MODEL_NAME}"
         echo "  - Weights:    ${YOLO_MODEL_PATH}"
@@ -671,6 +734,8 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     
     # -W ignore suppresses benign RuntimeWarning about module import order
     # Use YOLO_MODEL_PATH which handles both standard and continued training modes
+    # Enable pipefail to capture Python exit code through tee
+    set -o pipefail
     if python -W "ignore::RuntimeWarning:runpy" -m modules.training.train \
         --data-yaml "${DATA_YAML}" \
         --model "${YOLO_MODEL_PATH}" \
@@ -721,42 +786,108 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
         --rect ${RECT} \
         --class-focus-mode "${CLASS_FOCUS_MODE}" \
         --class-weights "${CLASS_WEIGHTS_JSON}" \
-        --log-dir "${EXPERIMENT_LOG_DIR:-}" 2>&1 | tee "${TRAINING_OUTPUT_FILE}"; then
+        --log-dir "${EXPERIMENT_LOG_DIR:-}" \
+        --regenerate-only ${REGENERATE_ONLY} 2>&1 | tee_clean "${TRAINING_OUTPUT_FILE}"; then
         
-        SUCCESSFUL_RUNS+=("${RUN_ID}")
-        print_success "Run ${RUN_ID} trained successfully!"
-        print_success "Saved to: ${OUTPUT_DIR}/${EXP_NAME}"
-        
-        if [ "$LOGGING_ENABLED" = true ]; then
-            log_info "Training completed successfully for ${RUN_ID}"
+        # Double-check for OOM or other errors in output (pipefail may not catch all cases)
+        if grep -q "OutOfMemoryError\|CUDA out of memory\|HIP out of memory\|RuntimeError:\|ZeroDivisionError\|Exception:" "${TRAINING_OUTPUT_FILE}" 2>/dev/null; then
+            # False positive - training actually failed
+            FAILED_RUNS+=("${RUN_ID}")
+            print_error "Run ${RUN_ID} failed with error (detected in output)!"
+            
+            if grep -q "OutOfMemoryError\|out of memory" "${TRAINING_OUTPUT_FILE}" 2>/dev/null; then
+                print_error "  -> GPU Out of Memory error detected"
+                print_warning "  Suggestions:"
+                print_warning "    - Reduce batch_size (current: ${BATCH_SIZE})"
+                print_warning "    - Reduce img_size (current: ${IMG_SIZE})"
+                print_warning "    - Use smaller model (current: ${YOLO_MODEL})"
+            fi
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_error "Training failed for ${RUN_ID} (error detected in output)"
+            fi
+        else
+            SUCCESSFUL_RUNS+=("${RUN_ID}")
+            print_success "Run ${RUN_ID} trained successfully!"
+            print_success "Saved to: ${OUTPUT_DIR}/${EXP_NAME}"
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_info "Training completed successfully for ${RUN_ID}"
+            fi
         fi
         
         # Copy logs and trained model to dataset-specific folders
         copy_outputs_to_dataset "${EXPERIMENT_LOG_DIR:-}" "${OUTPUT_DIR}" "${EXP_NAME}" "${DATASET_PATH}"
     else
         TRAINING_EXIT_CODE=$?
-        FAILED_RUNS+=("${RUN_ID}")
-        print_error "Run ${RUN_ID} training failed!"
         
-        if [ "$LOGGING_ENABLED" = true ]; then
-            # Log comprehensive error details
-            log_error "Training failed for ${RUN_ID}"
-            log_error "Exit code: ${TRAINING_EXIT_CODE}"
-            log_error "Command: python -m modules.training.train"
-            log_error "Parameters:"
-            log_error "  --data-yaml: ${DATA_YAML}"
-            log_error "  --model: ${YOLO_MODEL}"
-            log_error "  --epochs: ${EPOCHS}"
-            log_error "  --batch-size: ${BATCH_SIZE}"
-            log_error "  --img-size: ${IMG_SIZE}"
-            log_error "  --device: ${DEVICE}"
+        # Handle different exit codes
+        if [ "${TRAINING_EXIT_CODE}" -eq 130 ]; then
+            # Exit code 130 = SIGINT (128 + 2), typically Ctrl+C
+            print_warning "Run ${RUN_ID} interrupted by user (Ctrl+C or SIGINT)"
+            print_info "Training was manually stopped - this is not a crash"
+            FAILED_RUNS+=("${RUN_ID} (interrupted)")
             
-            # Capture and log the Python error output
-            if [ -f "${TRAINING_OUTPUT_FILE}" ] && [ -s "${TRAINING_OUTPUT_FILE}" ]; then
-                log_error "=== Python Error Output ==="
-                # Log the last 100 lines which typically contain the error
-                tail -n 100 "${TRAINING_OUTPUT_FILE}" >> "${CURRENT_ERROR_LOG}"
-                log_error "=== End of Error Output ==="
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_warning "Training interrupted by user for ${RUN_ID}"
+                log_info "Exit code: 130 (SIGINT - user interrupt)"
+            fi
+            
+            # Ask if user wants to continue with remaining runs
+            if [ ${CURRENT_RUN} -lt ${TOTAL_COMBINATIONS} ]; then
+                print_info "Remaining runs: $((TOTAL_COMBINATIONS - CURRENT_RUN))"
+                print_info "Stopping all remaining runs (user interrupt detected)"
+                # Break out of all loops
+                break 9
+            fi
+        elif [ "${TRAINING_EXIT_CODE}" -eq 137 ]; then
+            # Exit code 137 = SIGKILL (128 + 9), often OOM killer
+            print_error "Run ${RUN_ID} was killed (possibly by OOM killer)"
+            print_warning "The system may have run out of memory and killed the process"
+            print_warning "Suggestions:"
+            print_warning "  - Reduce batch_size (current: ${BATCH_SIZE})"
+            print_warning "  - Reduce img_size (current: ${IMG_SIZE})"
+            print_warning "  - Use a smaller model (current: ${YOLO_MODEL})"
+            FAILED_RUNS+=("${RUN_ID}")
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_error "Training killed for ${RUN_ID} (possibly OOM killer)"
+                log_error "Exit code: 137 (SIGKILL)"
+            fi
+        elif [ "${TRAINING_EXIT_CODE}" -eq 143 ]; then
+            # Exit code 143 = SIGTERM (128 + 15), graceful termination
+            print_warning "Run ${RUN_ID} was terminated gracefully (SIGTERM)"
+            FAILED_RUNS+=("${RUN_ID} (terminated)")
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                log_warning "Training terminated for ${RUN_ID}"
+                log_info "Exit code: 143 (SIGTERM)"
+            fi
+        else
+            # Other error codes - actual failures
+            FAILED_RUNS+=("${RUN_ID}")
+            print_error "Run ${RUN_ID} training failed!"
+            
+            if [ "$LOGGING_ENABLED" = true ]; then
+                # Log comprehensive error details
+                log_error "Training failed for ${RUN_ID}"
+                log_error "Exit code: ${TRAINING_EXIT_CODE}"
+                log_error "Command: python -m modules.training.train"
+                log_error "Parameters:"
+                log_error "  --data-yaml: ${DATA_YAML}"
+                log_error "  --model: ${YOLO_MODEL}"
+                log_error "  --epochs: ${EPOCHS}"
+                log_error "  --batch-size: ${BATCH_SIZE}"
+                log_error "  --img-size: ${IMG_SIZE}"
+                log_error "  --device: ${DEVICE}"
+                
+                # Capture and log the Python error output
+                if [ -f "${TRAINING_OUTPUT_FILE}" ] && [ -s "${TRAINING_OUTPUT_FILE}" ]; then
+                    log_error "=== Python Error Output ==="
+                    # Log the last 100 lines which typically contain the error
+                    tail -n 100 "${TRAINING_OUTPUT_FILE}" >> "${CURRENT_ERROR_LOG}"
+                    log_error "=== End of Error Output ==="
+                fi
             fi
         fi
     fi

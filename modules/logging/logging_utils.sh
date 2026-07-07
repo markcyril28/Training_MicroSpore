@@ -16,6 +16,11 @@ LOGGING_BASE_DIR="$(dirname "$(dirname "$LOGGING_SCRIPT_DIR")")"
 # LOGGING CONFIGURATION
 #===============================================================================
 
+# Clean log output mode: removes ANSI escape codes from log files
+# Set to true for cleaner log files (recommended for log review)
+# Set to false to preserve terminal color codes in logs
+CLEAN_LOG_OUTPUT=${CLEAN_LOG_OUTPUT:-true}
+
 # Base logs directory
 LOGS_BASE_DIR="${LOGGING_BASE_DIR}/logs"
 
@@ -36,6 +41,59 @@ SYSTEM_MONITOR_INTERVAL=10
 # PID files for background monitors
 GPU_MONITOR_PID_FILE="/tmp/gpu_monitor_$$.pid"
 SYSTEM_MONITOR_PID_FILE="/tmp/system_monitor_$$.pid"
+
+#===============================================================================
+# ANSI CODE HANDLING
+#===============================================================================
+
+# Strip ANSI escape codes from input
+# Used to clean terminal output before writing to log files
+# Removes: color codes, cursor control, carriage returns, and other escape sequences
+#
+# Handles:
+#   - Color codes: \x1b[32m, \x1b[1;34m, \x1b[0m
+#   - Cursor control: \x1b[K (clear line), \x1b[?25l (hide cursor)
+#   - OSC sequences: \x1b]0;title\x07
+#   - Carriage returns without newlines (progress bars)
+#   - Multiple carriage-return overwritten lines
+strip_ansi() {
+    # Use perl for more robust ANSI stripping (handles complex sequences better)
+    # Falls back to sed if perl is not available
+    if command -v perl >/dev/null 2>&1; then
+        perl -pe '
+            # Remove all ANSI escape sequences
+            s/\e\[[0-9;]*[a-zA-Z]//g;
+            # Remove OSC sequences (title bar, etc.)
+            s/\e\][^\a]*\a//g;
+            # Remove carriage return progress bar overwrites (keep last line)
+            s/^.*\r(?!\n)//gm;
+            # Clean up any remaining escape characters
+            s/\e\[\?[0-9;]*[a-zA-Z]//g;
+        '
+    else
+        # Fallback to sed (less comprehensive but works)
+        sed -E '
+            s/\x1b\[[0-9;]*[a-zA-Z]//g
+            s/\x1b\][^\x07]*\x07//g
+            s/\x1b\[\?[0-9;]*[a-zA-Z]//g
+            s/\r[^\n]*\r/\r/g
+        '
+    fi
+}
+
+# Custom tee that optionally strips ANSI codes from output going to files
+# Usage: command 2>&1 | tee_clean log_file.txt
+# Respects CLEAN_LOG_OUTPUT setting (default: true)
+tee_clean() {
+    local log_file="$1"
+    if [ "${CLEAN_LOG_OUTPUT:-true}" = true ]; then
+        # Tee to stdout (with colors) and strip ANSI codes for file
+        tee >(strip_ansi >> "$log_file")
+    else
+        # Normal tee (preserve ANSI codes in file)
+        tee -a "$log_file"
+    fi
+}
 
 #===============================================================================
 # DIRECTORY SETUP
@@ -169,11 +227,41 @@ append_training_output_to_full_log() {
 #===============================================================================
 
 # Get GPU stats as CSV line
+# Supports both NVIDIA (nvidia-smi) and AMD (rocm-smi) GPUs
 get_gpu_stats() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    # Try AMD ROCm first (for AMD GPUs like MI210)
+    if command -v rocm-smi &> /dev/null; then
+        # rocm-smi output format varies, parse carefully
+        rocm-smi --showuse --showmemuse --showtemp --showpower --csv 2>/dev/null | tail -n +2 | while read line; do
+            # CSV columns: GPU, Use %, Mem Use %, Temp, Power
+            local gpu_id=$(echo "$line" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local gpu_util=$(echo "$line" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
+            local mem_pct=$(echo "$line" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
+            local temp=$(echo "$line" | cut -d',' -f4 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local power=$(echo "$line" | cut -d',' -f5 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            # Get memory info separately
+            local mem_info=$(rocm-smi --showmeminfo vram --csv 2>/dev/null | tail -n +2 | head -1)
+            local mem_used=$(echo "$mem_info" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local mem_total=$(echo "$mem_info" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            # Convert bytes to MB if needed
+            if [ -n "$mem_used" ] && [ "$mem_used" -gt 1000000000 ] 2>/dev/null; then
+                mem_used=$((mem_used / 1048576))
+                mem_total=$((mem_total / 1048576))
+            fi
+            
+            echo "${timestamp},${gpu_id},AMD GPU,${gpu_util:-0},${mem_used:-0},${mem_total:-0},${mem_pct:-0},${temp:-0},${power:-0}"
+        done
+        return
+    fi
+    
+    # Fall back to NVIDIA
     if command -v nvidia-smi &> /dev/null; then
         nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw \
             --format=csv,noheader,nounits 2>/dev/null | while read line; do
-            local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
             # Use sed to trim whitespace (safer than xargs for special characters)
             local gpu_id=$(echo "$line" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             local gpu_name=$(echo "$line" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -520,6 +608,7 @@ trap_logging_cleanup() {
 # EXPORT FUNCTIONS
 #===============================================================================
 
+export -f strip_ansi tee_clean
 export -f init_logging_dirs _check_logging_init
 export -f log_message log_info log_warning log_error
 export -f start_full_logging append_training_output_to_full_log
@@ -532,3 +621,4 @@ export -f stop_all_monitors generate_log_summary cleanup_logging trap_logging_cl
 
 # Export global variables for training output logging
 export CURRENT_TRAINING_OUTPUT
+export CLEAN_LOG_OUTPUT

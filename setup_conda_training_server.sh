@@ -205,6 +205,7 @@ if conda env list | grep -q "^${ENV_NAME} "; then
             pip install --upgrade \
                 opencv-python \
                 numpy \
+                pillow \
                 matplotlib \
                 seaborn \
                 pandas \
@@ -392,6 +393,7 @@ print_header "Installing Additional Dependencies"
 pip install \
     opencv-python \
     numpy \
+    pillow \
     matplotlib \
     seaborn \
     pandas \

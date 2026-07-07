@@ -25,8 +25,9 @@ try:
     import torch
     YOLO_AVAILABLE = True
 except ImportError:
+    YOLO = None
+    torch = None
     YOLO_AVAILABLE = False
-    print("Warning: ultralytics or torch not installed. Run setup_conda_training.sh first.")
 
 
 class YOLOTrainer:
@@ -57,8 +58,10 @@ class YOLOTrainer:
         self.results = None
         self.training_config = {}
         
-    def load_model(self) -> 'YOLO':
+    def load_model(self) -> Any:
         """Load YOLO model"""
+        if YOLO is None:
+            raise ImportError("ultralytics not installed. Run setup_conda_training.sh first.")
         self.model = YOLO(self.model_path)
         return self.model
     
@@ -132,6 +135,8 @@ class YOLOTrainer:
         Returns:
             Validation results
         """
+        if YOLO is None:
+            raise ImportError("ultralytics not installed. Run setup_conda_training.sh first.")
         if model_path:
             model = YOLO(model_path)
         elif self.model:
@@ -155,6 +160,8 @@ class YOLOTrainer:
         Returns:
             Path to exported model
         """
+        if YOLO is None:
+            raise ImportError("ultralytics not installed. Run setup_conda_training.sh first.")
         if model_path:
             model = YOLO(model_path)
         elif self.model:

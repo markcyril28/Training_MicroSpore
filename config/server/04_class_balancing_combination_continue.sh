@@ -116,7 +116,7 @@ ADDITIONAL_EPOCHS_LIST=(
 DATASET_LIST=(
     # "Dataset_1_TEST"            # Test dataset
     "Dataset_2_OPTIMIZATION"      # Optimization dataset (active)
-    # "Dataset_3_FINAL_RUN"       # Final run dataset (uncomment to add)
+    # "Dataset_3_TEST_TRAIN_SPLIT" # Test train split dataset (uncomment to add)
 )
 
 # Default dataset name (first in list)
@@ -161,7 +161,7 @@ PATIENCE_LIST=(
 )
 
 BATCH_SIZE_LIST=(
-    8                     # low (for debugging)
+    4                     # low (for debugging)
     #16                    # moderate
     #32                    # standard for high-end GPUs
     #64                      # optimal for MI210 64GB HBM2e (maximum throughput)
@@ -492,8 +492,8 @@ CACHE_LIST=(
 )
 
 AMP_LIST=(
-    true                    # mixed precision (recommended - faster on MI210)
-    # false                 # full precision (use if numerical stability issues)
+    #true                    # mixed precision (recommended - faster on MI210)
+    false                 # full precision (use if numerical stability issues)
 )
 
 FREEZE_LIST=(
