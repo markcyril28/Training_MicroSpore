@@ -731,6 +731,8 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     else
         TRAINING_OUTPUT_FILE=$(mktemp)
     fi
+    STOP_REMAINING_RUNS=false
+    COPY_OUTPUTS_AFTER_LOGGING=false
     
     # -W ignore suppresses benign RuntimeWarning about module import order
     # Use YOLO_MODEL_PATH which handles both standard and continued training modes
@@ -739,6 +741,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     if python -W "ignore::RuntimeWarning:runpy" -m modules.training.train \
         --data-yaml "${DATA_YAML}" \
         --model "${YOLO_MODEL_PATH}" \
+        --model-arch "${MODEL_NAME}" \
         --weights-dir "${WEIGHTS_DIR}" \
         --project-dir "${OUTPUT_DIR}" \
         --exp-name "${EXP_NAME}" \
@@ -816,8 +819,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
             fi
         fi
         
-        # Copy logs and trained model to dataset-specific folders
-        copy_outputs_to_dataset "${EXPERIMENT_LOG_DIR:-}" "${OUTPUT_DIR}" "${EXP_NAME}" "${DATASET_PATH}"
+        COPY_OUTPUTS_AFTER_LOGGING=true
     else
         TRAINING_EXIT_CODE=$?
         
@@ -837,8 +839,7 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
             if [ ${CURRENT_RUN} -lt ${TOTAL_COMBINATIONS} ]; then
                 print_info "Remaining runs: $((TOTAL_COMBINATIONS - CURRENT_RUN))"
                 print_info "Stopping all remaining runs (user interrupt detected)"
-                # Break out of all loops
-                break 9
+                STOP_REMAINING_RUNS=true
             fi
         elif [ "${TRAINING_EXIT_CODE}" -eq 137 ]; then
             # Exit code 137 = SIGKILL (128 + 9), often OOM killer
@@ -900,11 +901,18 @@ for CLASS_FOCUS_MODE in "${CLASS_FOCUS_MODE_LIST[@]}"; do
     # Append training output to the main full log, then stop monitors
     if [ "$LOGGING_ENABLED" = true ]; then
         append_training_output_to_full_log
-        stop_all_monitors
-        generate_log_summary
+        finalize_logging_run
+    fi
+    if [ "${COPY_OUTPUTS_AFTER_LOGGING:-false}" = true ]; then
+        # Copy logs and trained model after final summary generation.
+        copy_outputs_to_dataset "${EXPERIMENT_LOG_DIR:-}" "${OUTPUT_DIR}" "${EXP_NAME}" "${DATASET_PATH}"
     fi
     
     echo ""
+    if [ "${STOP_REMAINING_RUNS:-false}" = true ]; then
+        # Break out of all training loops after cleanup/log finalization.
+        break 9
+    fi
     
     # Rest between runs to let GPU cool down (only if multiple combinations)
     if [ ${CURRENT_RUN} -lt ${TOTAL_COMBINATIONS} ] && [ ${TOTAL_COMBINATIONS} -gt 1 ] && [ ${REST_TIME_PER_RUN} -gt 0 ]; then
