@@ -127,6 +127,7 @@ init_logging_dirs() {
     
     # Mark logging as initialized
     LOGGING_INITIALIZED=true
+    LOGGING_CLEANED_UP=false
     
     # Initialize CSV headers
     echo "timestamp,gpu_id,gpu_name,gpu_util_pct,memory_used_mb,memory_total_mb,memory_pct,temperature_c,power_w" > "$CURRENT_GPU_LOG"
@@ -233,22 +234,28 @@ get_gpu_stats() {
     
     # Try AMD ROCm first (for AMD GPUs like MI210)
     if command -v rocm-smi &> /dev/null; then
-        # rocm-smi output format varies, parse carefully
+        # rocm-smi --csv column order varies by ROCm version. This parser matches
+        # ROCm 6.x output used on the MI210 server.
         rocm-smi --showuse --showmemuse --showtemp --showpower --csv 2>/dev/null | tail -n +2 | while read line; do
-            # CSV columns: GPU, Use %, Mem Use %, Temp, Power
+            # CSV columns:
+            # device, edge temp, junction temp, memory temp, HBM0-3 temps, power,
+            # GPU use %, GFX activity, VRAM %, ...
             local gpu_id=$(echo "$line" | cut -d',' -f1 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            local gpu_util=$(echo "$line" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
-            local mem_pct=$(echo "$line" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
-            local temp=$(echo "$line" | cut -d',' -f4 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            local power=$(echo "$line" | cut -d',' -f5 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -z "$gpu_id" ]; then
+                continue
+            fi
+            local gpu_util=$(echo "$line" | cut -d',' -f10 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
+            local mem_pct=$(echo "$line" | cut -d',' -f12 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -d '%')
+            local temp=$(echo "$line" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local power=$(echo "$line" | cut -d',' -f9 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             
             # Get memory info separately
             local mem_info=$(rocm-smi --showmeminfo vram --csv 2>/dev/null | tail -n +2 | head -1)
-            local mem_used=$(echo "$mem_info" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            local mem_total=$(echo "$mem_info" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local mem_total=$(echo "$mem_info" | cut -d',' -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            local mem_used=$(echo "$mem_info" | cut -d',' -f3 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             
             # Convert bytes to MB if needed
-            if [ -n "$mem_used" ] && [ "$mem_used" -gt 1000000000 ] 2>/dev/null; then
+            if [ -n "$mem_total" ] && [ "$mem_total" -gt 1000000000 ] 2>/dev/null; then
                 mem_used=$((mem_used / 1048576))
                 mem_total=$((mem_total / 1048576))
             fi
@@ -306,7 +313,6 @@ start_gpu_monitor() {
     echo $pid > "$GPU_MONITOR_PID_FILE"
     
     log_info "GPU monitoring started (PID: $pid, interval: ${interval}s)"
-    echo $pid
 }
 
 # Stop GPU monitoring
@@ -377,7 +383,6 @@ start_system_monitor() {
     echo $pid > "$SYSTEM_MONITOR_PID_FILE"
     
     log_info "System monitoring started (PID: $pid, interval: ${interval}s)"
-    echo $pid
 }
 
 # Stop system monitoring
@@ -556,9 +561,15 @@ generate_log_summary() {
         
         # Error summary
         if [ -f "$CURRENT_ERROR_LOG" ]; then
-            local error_count=$(grep -c "\[ERROR\]" "$CURRENT_ERROR_LOG" 2>/dev/null || echo "0")
-            local warning_count=$(grep -c "\[WARNING\]" "$CURRENT_ERROR_LOG" 2>/dev/null || echo "0")
-            local oom_count=$(grep -c "\[OOM\]" "$CURRENT_ERROR_LOG" 2>/dev/null || echo "0")
+            local error_count
+            local warning_count
+            local oom_count
+            error_count=$(grep -c "\[ERROR\]" "$CURRENT_ERROR_LOG" 2>/dev/null || true)
+            warning_count=$(grep -c "\[WARNING\]" "$CURRENT_ERROR_LOG" 2>/dev/null || true)
+            oom_count=$(grep -c "\[OOM\]" "$CURRENT_ERROR_LOG" 2>/dev/null || true)
+            error_count="${error_count:-0}"
+            warning_count="${warning_count:-0}"
+            oom_count="${oom_count:-0}"
             
             echo "Error Summary:"
             echo "  Errors: ${error_count}"
@@ -586,22 +597,42 @@ generate_log_summary() {
         
     } > "$summary_file"
     
-    cat "$summary_file"
+    if ! [ "$summary_file" -ef /proc/$$/fd/1 ] 2>/dev/null; then
+        cat "$summary_file"
+    fi
     log_info "Summary saved to: ${summary_file}"
+}
+
+# Finish a normal run and disable the exit trap for this log directory.
+finalize_logging_run() {
+    if [ "${LOGGING_CLEANED_UP:-false}" = true ]; then
+        return 0
+    fi
+    stop_all_monitors
+    generate_log_summary
+    LOGGING_CLEANED_UP=true
+    LOGGING_INITIALIZED=false
+    trap - EXIT TERM
 }
 
 # Cleanup function for trap
 cleanup_logging() {
+    if [ "${LOGGING_CLEANED_UP:-false}" = true ]; then
+        return 0
+    fi
+    LOGGING_CLEANED_UP=true
+    trap - EXIT TERM
     if [ "$LOGGING_INITIALIZED" = "true" ]; then
         log_info "Cleaning up logging..."
         stop_all_monitors
         generate_log_summary
+        LOGGING_INITIALIZED=false
     fi
 }
 
 # Set trap for cleanup on exit
 trap_logging_cleanup() {
-    trap cleanup_logging EXIT INT TERM
+    trap cleanup_logging EXIT TERM
 }
 
 #===============================================================================
@@ -617,7 +648,7 @@ export -f start_system_monitor stop_system_monitor get_system_stats
 export -f log_oom_event log_interruption log_training_warning
 export -f save_metrics_snapshot log_best_checkpoint
 export -f log_prediction_sample
-export -f stop_all_monitors generate_log_summary cleanup_logging trap_logging_cleanup
+export -f stop_all_monitors generate_log_summary finalize_logging_run cleanup_logging trap_logging_cleanup
 
 # Export global variables for training output logging
 export CURRENT_TRAINING_OUTPUT
