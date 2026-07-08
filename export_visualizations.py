@@ -144,14 +144,14 @@ def export_existing_folder(
     else:
         print("[1/5] SKIP: results.csv not found")
     
-    # Generate visualization guides
-    print("[2/5] Generating visualization guides...")
-    generate_visualization_guides(folders)
-    
     # Move YOLO outputs to organized folders
-    print("[3/5] Organizing YOLO output files...")
+    print("[2/5] Organizing YOLO output files...")
     exp_name = experiment_path.name
     move_yolo_outputs_to_folders(experiment_path, folders, exp_name)
+
+    # Generate visualization guides after files are organized
+    print("[3/5] Generating visualization guides...")
+    generate_visualization_guides(folders)
     
     # Run full export if weights exist
     weights_dir = experiment_path / "weights"
@@ -184,7 +184,6 @@ def export_existing_folder(
                 config=config,
                 classes_file=classes_file,
                 img_size=img_size,
-                data_yaml=data_yaml_path,
             )
         except Exception as e:
             print(f"[4/5] Warning: Full export failed: {e}")
@@ -205,6 +204,8 @@ def export_existing_folder(
             )
             if cm_exports:
                 print(f"[5/5] Generated {len(cm_exports)} confusion matrix files")
+        except ImportError:
+            print("[5/5] SKIP: confusion matrix statistics helper is not available")
         except Exception as e:
             print(f"[5/5] Warning: Confusion matrix stats failed: {e}")
     else:

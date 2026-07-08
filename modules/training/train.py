@@ -9,7 +9,7 @@ import json
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 
 try:
@@ -497,45 +497,128 @@ def organize_output_folders(experiment_path: Path) -> Dict[str, Path]:
     return folders
 
 
+def _actual_image_suffix(path: Path) -> Optional[str]:
+    """Return the suffix implied by common image file signatures."""
+    try:
+        header = path.read_bytes()[:8]
+    except OSError:
+        return None
+
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    return None
+
+
+def _fix_mislabeled_image_extensions(folders: Dict[str, Path]) -> None:
+    """Correct generated visualization files whose extension does not match bytes."""
+    for key in ("viz_curves", "viz_matrices", "viz_samples", "viz_overviews"):
+        folder = folders.get(key)
+        if not folder or not folder.exists():
+            continue
+
+        for path in folder.iterdir():
+            if not path.is_file() or path.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+                continue
+
+            actual_suffix = _actual_image_suffix(path)
+            if not actual_suffix:
+                continue
+
+            current_suffix = path.suffix.lower()
+            if actual_suffix == ".jpg" and current_suffix in {".jpg", ".jpeg"}:
+                continue
+            if current_suffix == actual_suffix:
+                continue
+
+            target = path.with_suffix(actual_suffix)
+            counter = 1
+            while target.exists():
+                target = path.with_name(f"{path.stem}_{counter}{actual_suffix}")
+                counter += 1
+
+            path.rename(target)
+            print(f"[Viz] Corrected image extension: {path.name} -> {target.name}")
+
+
+def _move_visual_file(src_file: Path, dest_file: Path) -> None:
+    """Move a visualization file, replacing stale generated output if needed."""
+    import shutil as sh
+
+    dest_file.parent.mkdir(parents=True, exist_ok=True)
+    if dest_file.exists() and src_file.resolve() != dest_file.resolve():
+        dest_file.unlink()
+    if src_file.resolve() != dest_file.resolve():
+        sh.move(str(src_file), str(dest_file))
+
+
+def _relocate_existing_visuals(
+    folders: Dict[str, Path],
+    viz_mappings: Dict[str, Tuple[str, Path]],
+) -> None:
+    """Move already-organized visuals into their corrected destination folders."""
+    visual_folders = [
+        folders["viz_curves"],
+        folders["viz_matrices"],
+        folders["viz_samples"],
+        folders["viz_overviews"],
+    ]
+
+    for original_name, (new_name, dest_folder) in viz_mappings.items():
+        for source_folder in visual_folders:
+            candidate = source_folder / original_name
+            if not candidate.exists():
+                continue
+            dest = dest_folder / new_name
+            if candidate.resolve() != dest.resolve():
+                _move_visual_file(candidate, dest)
+
+
 def move_yolo_outputs_to_folders(experiment_path: Path, folders: Dict[str, Path], exp_name: str) -> None:
     """
     Move YOLO-generated outputs to organized folders with proper naming.
     
     Visualization organization:
-        curves/ - loss_curves, precision_recall, PR_curve, P_curve, R_curve, F1_curve
+        curves/ - loss_curves, precision_recall, PR/P/R/F1 curves
         matrices/ - confusion_matrix, labels_correlogram
         samples/ - val_batch_predictions, train_batch_samples
-        overviews/ - results, Box_curve, labels
+        overviews/ - results, labels
     
     Args:
         experiment_path: Path to training experiment folder
         folders: Dictionary of organized folder paths
         exp_name: Experiment folder name for file naming
     """
-    import shutil as sh
+    _fix_mislabeled_image_extensions(folders)
     
     # Visualization file mappings: original YOLO name -> (new name, destination folder)
     viz_mappings = {
         # Curves
         'results.png': ('results.png', folders['viz_overviews']),
+        'BoxF1_curve.png': ('BoxF1_curve.png', folders['viz_curves']),
+        'BoxP_curve.png': ('BoxP_curve.png', folders['viz_curves']),
+        'BoxR_curve.png': ('BoxR_curve.png', folders['viz_curves']),
+        'BoxPR_curve.png': ('BoxPR_curve.png', folders['viz_curves']),
         'F1_curve.png': ('F1_curve.png', folders['viz_curves']),
         'P_curve.png': ('P_curve.png', folders['viz_curves']),
         'R_curve.png': ('R_curve.png', folders['viz_curves']),
         'PR_curve.png': ('PR_curve.png', folders['viz_curves']),
-        'Box_curve.png': ('Box_curve.png', folders['viz_overviews']),
         # Matrices
         'confusion_matrix.png': ('confusion_matrix.png', folders['viz_matrices']),
         'confusion_matrix_normalized.png': ('confusion_matrix_normalized.png', folders['viz_matrices']),
-        'labels_correlogram.jpg': ('labels_correlogram.png', folders['viz_matrices']),
-        'labels.jpg': ('labels.png', folders['viz_overviews']),
+        'labels_correlogram.jpg': ('labels_correlogram.jpg', folders['viz_matrices']),
+        'labels.jpg': ('labels.jpg', folders['viz_overviews']),
         # Samples
-        'train_batch0.jpg': ('train_batch_samples.png', folders['viz_samples']),
-        'train_batch1.jpg': ('train_batch_samples_1.png', folders['viz_samples']),
-        'train_batch2.jpg': ('train_batch_samples_2.png', folders['viz_samples']),
-        'val_batch0_labels.jpg': ('val_batch_labels.png', folders['viz_samples']),
-        'val_batch0_pred.jpg': ('val_batch_predictions.png', folders['viz_samples']),
-        'val_batch1_pred.jpg': ('val_batch_predictions_1.png', folders['viz_samples']),
-        'val_batch2_pred.jpg': ('val_batch_predictions_2.png', folders['viz_samples']),
+        'train_batch0.jpg': ('train_batch_samples.jpg', folders['viz_samples']),
+        'train_batch1.jpg': ('train_batch_samples_1.jpg', folders['viz_samples']),
+        'train_batch2.jpg': ('train_batch_samples_2.jpg', folders['viz_samples']),
+        'val_batch0_labels.jpg': ('val_batch_labels.jpg', folders['viz_samples']),
+        'val_batch1_labels.jpg': ('val_batch_labels_1.jpg', folders['viz_samples']),
+        'val_batch2_labels.jpg': ('val_batch_labels_2.jpg', folders['viz_samples']),
+        'val_batch0_pred.jpg': ('val_batch_predictions.jpg', folders['viz_samples']),
+        'val_batch1_pred.jpg': ('val_batch_predictions_1.jpg', folders['viz_samples']),
+        'val_batch2_pred.jpg': ('val_batch_predictions_2.jpg', folders['viz_samples']),
     }
     
     # Move visualization files with proper naming
@@ -543,8 +626,9 @@ def move_yolo_outputs_to_folders(experiment_path: Path, folders: Dict[str, Path]
         src_file = experiment_path / original_name
         if src_file.exists():
             dest = dest_folder / new_name
-            sh.copy(str(src_file), str(dest))
-            src_file.unlink()  # Remove original
+            _move_visual_file(src_file, dest)
+
+    _relocate_existing_visuals(folders, viz_mappings)
     
     # Move remaining images to overviews
     viz_patterns = ['*.png', '*.jpg', '*.jpeg']
@@ -552,7 +636,9 @@ def move_yolo_outputs_to_folders(experiment_path: Path, folders: Dict[str, Path]
         for f in experiment_path.glob(pattern):
             if f.is_file():
                 dest = folders['viz_overviews'] / f.name
-                sh.move(str(f), str(dest))
+                _move_visual_file(f, dest)
+
+    _fix_mislabeled_image_extensions(folders)
     
     # Keep args.yaml at root level (per spec)
     # No movement needed as YOLO creates it there
@@ -560,7 +646,7 @@ def move_yolo_outputs_to_folders(experiment_path: Path, folders: Dict[str, Path]
     # Copy args.yaml to weights/configs folder as well with proper naming
     args_file = experiment_path / "args.yaml"
     if args_file.exists():
-        sh.copy(str(args_file), str(folders['weights_configs'] / f"{exp_name}_args.yaml"))
+        shutil.copy(str(args_file), str(folders['weights_configs'] / f"{exp_name}_args.yaml"))
 
 
 def export_training_outputs(
@@ -633,11 +719,11 @@ def export_training_outputs(
     # Generate custom visualizations (loss_curves.png, precision_recall.png)
     generate_custom_visualizations(results_csv, folders['viz_curves'])
     
-    # Generate visualization interpretation guides
-    generate_visualization_guides(folders)
-    
     # Move YOLO-generated outputs to organized folders
     move_yolo_outputs_to_folders(experiment_path, folders, exp_name)
+
+    # Generate visualization interpretation guides after files are organized
+    generate_visualization_guides(folders)
     
     # Clean up results.csv from root (moved to stats)
     if results_csv.exists():
@@ -1045,15 +1131,29 @@ def generate_custom_visualizations(results_csv: Path, curves_folder: Path) -> No
         print(f"[Viz] Error generating custom visualizations: {e}")
 
 
+def _visual_exists(folder: Path, name: str, include_variants: bool = False) -> bool:
+    """Return True if a visualization image exists for a guide stem."""
+    suffixes = (".png", ".jpg", ".jpeg")
+    if any((folder / f"{name}{suffix}").exists() for suffix in suffixes):
+        return True
+    if include_variants:
+        return any(
+            candidate.is_file()
+            for suffix in suffixes
+            for candidate in folder.glob(f"{name}_*{suffix}")
+        )
+    return False
+
+
 def generate_visualization_guides(folders: Dict[str, Path]) -> None:
     """
-    Generate interpretation guide txt files for each visualization.
+    Generate interpretation guide txt files for available visualizations.
     
     Creates *_guide_and_interpretation.txt files for:
-    - curves/: loss_curves, precision_recall, PR_curve, P_curve, R_curve, F1_curve
+    - curves/: loss_curves, precision_recall, PR/P/R/F1 curves
     - matrices/: confusion_matrix, labels_correlogram
     - samples/: val_batch_predictions, train_batch_samples
-    - overviews/: results, Box_curve, labels
+    - overviews/: results, labels
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -1079,16 +1179,18 @@ Training and validation loss curves over epochs.
 Generated: {timestamp}
 
 ## What This Shows
-Trade-off between precision and recall across confidence thresholds.
+Precision, recall, mAP@50, and mAP@50-95 across training epochs.
 
 ## Key Metrics
 - Precision: TP / (TP + FP) - How many detections are correct
 - Recall: TP / (TP + FN) - How many objects were found
+- mAP@50: Mean average precision at IoU 0.50
+- mAP@50-95: Mean average precision averaged across IoU thresholds
 
 ## Interpretation
-- GOOD: Curve stays high (close to top-right corner)
-- Area under curve (AUC) = Average Precision (AP)
-- Higher AUC = Better model performance
+- GOOD: Precision, recall, and mAP trend upward and stabilize
+- WARNING: Metrics plateau early or drop late = Check learning rate and overfitting
+- Compare folds by the final and best mAP@50-95 values
 """,
         'PR_curve': """# PR Curve (Precision-Recall Curve) Guide
 Generated: {timestamp}
@@ -1137,6 +1239,53 @@ F1 = 2 * (Precision * Recall) / (Precision + Recall)
 - GOOD: High peak (>0.8) with broad plateau
 - Use peak confidence for balanced precision/recall
 """,
+        'BoxPR_curve': """# Box PR Curve (Precision-Recall Curve) Guide
+Generated: {timestamp}
+
+## What This Shows
+Bounding-box precision vs recall at different confidence thresholds.
+
+## Interpretation
+- Ideal curve stays high as recall increases
+- Steep drops indicate confidence threshold sensitivity
+- Use with BoxP, BoxR, and BoxF1 curves to choose deployment thresholds
+""",
+        'BoxP_curve': """# Box P Curve (Precision-Confidence) Guide
+Generated: {timestamp}
+
+## What This Shows
+Bounding-box precision at different confidence thresholds.
+
+## Interpretation
+- Higher confidence usually increases precision and reduces false positives
+- Find the knee point before recall drops too aggressively
+- Compare classes to spot thresholds that are fragile for specific stages
+""",
+        'BoxR_curve': """# Box R Curve (Recall-Confidence) Guide
+Generated: {timestamp}
+
+## What This Shows
+Bounding-box recall at different confidence thresholds.
+
+## Interpretation
+- Lower confidence usually increases recall and finds more objects
+- Trade-off: More detections can also increase false positives
+- Use lower thresholds when missing objects is costlier than reviewing extras
+""",
+        'BoxF1_curve': """# Box F1 Curve Guide
+Generated: {timestamp}
+
+## What This Shows
+Bounding-box F1 score vs confidence threshold.
+
+## Key Formula
+F1 = 2 * (Precision * Recall) / (Precision + Recall)
+
+## Interpretation
+- Peak indicates the best balanced confidence threshold
+- GOOD: High peak with a broad plateau
+- Use the peak region as a practical threshold range, then verify examples
+""",
     }
     
     # Matrices guides
@@ -1156,6 +1305,22 @@ Predicted vs actual class distribution for all detections.
 - GOOD: Strong diagonal, weak off-diagonal
 - Common confusions appear as bright off-diagonal cells
 - Use to identify problematic class pairs
+""",
+        'confusion_matrix_normalized': """# Normalized Confusion Matrix Interpretation Guide
+Generated: {timestamp}
+
+## What This Shows
+Predicted vs actual class distribution normalized by class totals.
+
+## Reading the Matrix
+- Diagonal: Per-class correct prediction rate
+- Off-diagonal: Relative share of class confusions
+- Row: Actual class, Column: Predicted class
+
+## Interpretation
+- GOOD: Diagonal values are high across all classes
+- Class-specific weaknesses are easier to see than in the raw count matrix
+- Use off-diagonal hotspots to identify class pairs for review
 """,
         'labels_correlogram': """# Labels Correlogram Interpretation Guide
 Generated: {timestamp}
@@ -1177,6 +1342,17 @@ Correlation between bounding box dimensions and positions.
     
     # Samples guides
     samples_guides = {
+        'val_batch_labels': """# Validation Batch Labels Guide
+Generated: {timestamp}
+
+## What This Shows
+Validation images with ground-truth bounding boxes and class labels.
+
+## Interpretation
+- Check that boxes tightly cover the target objects
+- Verify class labels against the visible microspore stage
+- Compare with prediction batches to diagnose misses and class confusions
+""",
         'val_batch_predictions': """# Validation Batch Predictions Guide
 Generated: {timestamp}
 
@@ -1229,18 +1405,6 @@ Combined training metrics dashboard.
 - Convergence indicates training completion
 - Divergence between train/val indicates overfitting
 """,
-        'Box_curve': """# Box Curve Interpretation Guide
-Generated: {timestamp}
-
-## What This Shows
-Bounding box IoU (Intersection over Union) distribution.
-
-## Interpretation
-- Higher IoU = Better localization
-- IoU > 0.5: Acceptable detection
-- IoU > 0.75: Good localization
-- IoU > 0.9: Excellent localization
-""",
         'labels': """# Labels Distribution Guide
 Generated: {timestamp}
 
@@ -1268,7 +1432,16 @@ Dataset label statistics and distributions.
     ]
     
     for folder, guides in all_guides:
+        for old_guide in folder.glob("*_guide_and_interpretation.txt"):
+            old_guide.unlink()
         for name, content in guides.items():
+            include_variants = name in {
+                "train_batch_samples",
+                "val_batch_labels",
+                "val_batch_predictions",
+            }
+            if not _visual_exists(folder, name, include_variants=include_variants):
+                continue
             guide_path = folder / f"{name}_guide_and_interpretation.txt"
             with open(guide_path, 'w') as f:
                 f.write(content.format(timestamp=timestamp))
