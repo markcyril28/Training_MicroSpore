@@ -451,6 +451,12 @@ get_next_continue_number() {
     
     local max_num=0
     while IFS= read -r dir; do
+        # Ignore folders from interrupted/bootstrap runs that never produced
+        # a usable checkpoint; otherwise a canceled cont12 can force cont13.
+        if ! find "${dir}/weights" -maxdepth 1 -type f -name "*.pt" 2>/dev/null | grep -q .; then
+            continue
+        fi
+
         local dir_name
         dir_name=$(basename "${dir}")
         # Extract _contN suffix
