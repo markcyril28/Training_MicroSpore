@@ -318,16 +318,22 @@ class YOLOTrainingLogger(TrainingLogger):
     Integrates with Ultralytics training callbacks.
     """
     
-    def __init__(self, model_name: str, experiment_name: Optional[str] = None):
+    def __init__(
+        self,
+        model_name: str,
+        experiment_name: Optional[str] = None,
+        log_dir: Optional[Path] = None,
+    ):
         """
         Initialize YOLO training logger.
         
         Args:
             model_name: YOLO model name (e.g., 'yolo11n')
             experiment_name: Optional experiment name (defaults to model name)
+            log_dir: Optional existing log directory to use
         """
         exp_name = experiment_name or model_name
-        super().__init__(exp_name)
+        super().__init__(exp_name, log_dir=log_dir)
         self.model_name = model_name
     
     def parse_yolo_results(self, results) -> TrainingMetrics:
