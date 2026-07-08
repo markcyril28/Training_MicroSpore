@@ -31,7 +31,8 @@ AUTO_DETECT_LATEST=true
 PREFER_LAST_PT=false
 
 CONTINUE_3_OUTPUT_DIR="${SCRIPT_DIR}/trained_models_output/server/04_class_balancing_combination_continue_3"
-CONTINUE_3_WEIGHTS_DIR="${CONTINUE_3_OUTPUT_DIR}/continue_3/weights"
+CONTINUE_3_EXPERIMENT_DIR="${CONTINUE_3_OUTPUT_DIR}/Dataset_2_OPTIMIZATION_Dataset_2_OPTIMIZATION_best_gray_img1280_bal-manual_auto_e300_b8_lr0_00001_20260201_101533_cont1_gray_img1280_bal-manual_auto_e400_b8_lr0_00005_20260201_170927_cont1"
+CONTINUE_3_WEIGHTS_DIR="${CONTINUE_3_EXPERIMENT_DIR}/weights"
 CONTINUE_3_WEIGHTS_FILE="Dataset_2_OPTIMIZATION_Dataset_2_OPTIMIZATION_best_gray_img1280_bal-manual_auto_e300_b8_lr0_00001_20260201_101533_cont1_gray_img1280_bal-manual_auto_e400_b8_lr0_00005_20260201_170927_cont1_best.pt"
 
 # Fallback if auto-detection is disabled or finds no checkpoint.
@@ -39,7 +40,7 @@ CUSTOM_WEIGHTS_PATH="${CONTINUE_3_WEIGHTS_DIR}/${CONTINUE_3_WEIGHTS_FILE}"
 
 # Keep this relative to the training root so the mirrored server tree works.
 AUTO_DETECT_SEARCH_DIR="${CONTINUE_3_OUTPUT_DIR}"
-AUTO_DETECT_DATASET_FILTER=""
+AUTO_DETECT_DATASET_FILTER="Dataset_2_OPTIMIZATION"
 AUTO_DETECT_MODEL_FILTER=""
 
 #===============================================================================
