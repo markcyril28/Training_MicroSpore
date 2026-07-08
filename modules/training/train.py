@@ -6,6 +6,7 @@ Implements DRY principle - uses centralized config and utilities.
 import argparse
 import csv
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
@@ -1313,6 +1314,21 @@ def load_or_download_model(model_name: str, weights_dir: Optional[Path] = None) 
     return model
 
 
+def infer_yolo_arch(model_name: str, model_arch: Optional[str] = None) -> str:
+    """Infer a YOLO architecture label from an explicit value or model path/name."""
+    candidates = [
+        model_arch or "",
+        Path(str(model_name)).name,
+        str(model_name),
+    ]
+    pattern = re.compile(r"yolov?\d+[a-z]*u?|yolo\d+[a-z]*", re.IGNORECASE)
+    for candidate in candidates:
+        match = pattern.search(candidate)
+        if match:
+            return match.group(0).lower()
+    return ""
+
+
 def create_optimization_callbacks(opt_logger, patience: int = 50) -> Dict[str, callable]:
     """
     Create YOLO callbacks for optimization metrics logging.
@@ -1503,6 +1519,7 @@ def run_training(
     # Class focus parameters
     class_focus_mode: str = "none",
     class_weights: str = "{}",
+    model_arch: Optional[str] = None,
 ) -> Any:
     """
     Run YOLO model training with specified parameters.
@@ -1531,19 +1548,7 @@ def run_training(
     # Initialize Python logging if available and log_dir provided
     logger = None
     if LOGGING_AVAILABLE and log_dir:
-        logger = YOLOTrainingLogger(model_name, exp_name)
-        # Update log_dir and all subdirectories
-        logger.log_dir = Path(log_dir)
-        logger.metrics_dir = logger.log_dir / "training_metrics"
-        logger.vis_dir = logger.log_dir / "visualization_logs"
-        logger.errors_dir = logger.log_dir / "errors_logs"
-        # Recreate directories at the new location
-        logger.metrics_dir.mkdir(parents=True, exist_ok=True)
-        logger.vis_dir.mkdir(parents=True, exist_ok=True)
-        logger.errors_dir.mkdir(parents=True, exist_ok=True)
-        # Reinitialize metrics CSV at new location
-        logger.metrics_csv = logger.metrics_dir / "metrics.csv"
-        logger._init_metrics_csv()
+        logger = YOLOTrainingLogger(model_name, exp_name, Path(log_dir))
         print(f"[TrainingLogger] Logging to: {log_dir}")
     
     # Initialize optimization metrics logger for detailed hyperparameter tuning data
@@ -1578,19 +1583,19 @@ def run_training(
         if torch.cuda.is_available():
             gpu_mem_total = torch.cuda.get_device_properties(0).total_memory / (1024**3)  # GB
             
-            # Estimate memory requirements based on model and image size
-            # These are rough estimates based on empirical data
+            # Estimate memory requirements based on model and image size.
+            # Values are heuristic total-training GB per image at 640px.
             model_mem_estimates = {
-                'yolov8n': 0.5, 'yolo11n': 0.5,
-                'yolov8s': 1.0, 'yolo11s': 1.0,
-                'yolov8m': 2.0, 'yolo11m': 2.0,
-                'yolov8l': 4.0, 'yolo11l': 4.0,
-                'yolov8x': 8.0, 'yolo11x': 8.0,
+                'yolov8n': 0.10, 'yolo11n': 0.10,
+                'yolov8s': 0.16, 'yolo11s': 0.16,
+                'yolov8m': 0.32, 'yolo11m': 0.32,
+                'yolov8l': 0.55, 'yolo11l': 0.55,
+                'yolov8x': 0.85, 'yolo11x': 0.85,
             }
             
-            # Get base model memory (default to medium if unknown)
-            model_base = model_name.replace('.pt', '').lower()
-            base_mem = 2.0  # Default
+            # Get base model memory (default to medium if unknown).
+            model_base = infer_yolo_arch(model_name, model_arch)
+            base_mem = 0.32  # Default to medium-class model
             for key, val in model_mem_estimates.items():
                 if key in model_base:
                     base_mem = val
@@ -1598,10 +1603,8 @@ def run_training(
             
             # Scale by image size (quadratic) and batch size (linear)
             img_scale = (img_size / 640) ** 2
-            estimated_mem = base_mem * img_scale * batch_size
-            
-            # Add overhead for gradients, optimizer states, etc. (roughly 3x)
-            estimated_total = estimated_mem * 3
+            precision_factor = 1.0 if amp else 1.25
+            estimated_total = 2.0 + (base_mem * img_scale * batch_size * precision_factor)
             
             # Check if we have enough memory (with 10% safety margin)
             if estimated_total > gpu_mem_total * 0.9:
@@ -1627,9 +1630,9 @@ def run_training(
                     print(f"    • Reduce img_size: {img_size} → {safe_img}")
                 
                 # Suggest smaller model
-                if 'x' in model_base:
+                if model_base.endswith('x'):
                     print(f"    • Use smaller model: yolov8l or yolov8m instead of yolov8x")
-                elif 'l' in model_base:
+                elif model_base.endswith('l'):
                     print(f"    • Use smaller model: yolov8m instead of yolov8l")
                 
                 print()
@@ -1784,7 +1787,9 @@ def run_training(
         # Output
         project=project_dir,
         name=exp_name,
-        exist_ok=False,
+        # The optimization logger creates the experiment folder before training.
+        # Keep Ultralytics on the wrapper-provided name instead of auto-incrementing.
+        exist_ok=True,
         save=True,
         save_period=-1,
         
@@ -1957,6 +1962,8 @@ def main():
                         help='Convert images to grayscale for training')
     
     # Model settings
+    parser.add_argument('--model-arch', type=str, default='',
+                        help='Base YOLO architecture label for logging/checks')
     parser.add_argument('--pretrained', type=lambda x: x.lower() == 'true', default=True)
     parser.add_argument('--resume', type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument('--cache', type=str, default='disk')
@@ -2009,6 +2016,7 @@ def main():
     # Build config for stats and export
     config = {
         'model': args.model,
+        'model_arch': args.model_arch,
         'epochs': args.epochs,
         'batch_size': args.batch_size,
         'img_size': args.img_size,
@@ -2104,6 +2112,7 @@ def main():
             # Class focus parameters
             class_focus_mode=args.class_focus_mode,
             class_weights=args.class_weights,
+            model_arch=args.model_arch or None,
             log_dir=args.log_dir if args.log_dir else None,
         )
     
